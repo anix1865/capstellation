@@ -45,6 +45,11 @@ Play something in **Spotify** or **Apple Music** (on Windows, any player that sh
 - **Liquid:** the background slowly flows and ripples, a little more in loud parts.
 - **Light bar:** a glow that travels around the screen edges and pulses with the kick drum.
 - **Glitch:** thin torn scanlines and neon pixel blocks that follow the bass. Quiet verses get small flickers, loud parts get more, and a drop gets one bigger burst. It's kept restrained, so it never takes over the screen.
+- **Interludes:** when the music plays on with no words (intros, solos, outros), the sky goes to warp speed. The stars move as fast as the bass pushes them, kicks send out rings, and three dots fill in as the next line gets close.
+
+**Visualizer** (panel): **Bars** along the bottom, or **Radial**: the album cover spins slowly in the middle like a record, with the bars standing out around it. The constellations steer around it.
+
+**Use as wallpaper** (panel, desktop app only): Capstellation plays behind your desktop icons on your main screen instead of in a window. It's click-through, so the desktop works as normal. To turn it off, use the star icon in the menu bar (Mac) or the system tray (Windows), or click Capstellation in the Dock.
 
 The clock, lyrics, stars, visualizer and light bar all take their colors from the background, always at a brightness that keeps them readable.
 
@@ -132,8 +137,8 @@ cd desktop && npm run dist:win
 index.html              the whole UI (visuals, lyrics, settings)
 capstellation.py        standalone Mac helper (Python, no dependencies)
 audiotap.swift          macOS music-audio tap (ScreenCaptureKit)
-desktop/                Electron app: main.js, server.js (helper), updater.js
-native/windows/         Windows helper (C#): now playing + loopback audio
+desktop/                Electron app: main.js, server.js (helper), updater.js, wallpaper.js
+native/windows/         Windows helper (C#): now playing, loopback audio, wallpaper placement
 fonts/                  font licenses
 .github/workflows/      builds and releases
 ```

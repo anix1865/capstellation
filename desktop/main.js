@@ -4,6 +4,7 @@ const { app, BrowserWindow, session, shell, Menu } = require('electron');
 const path = require('path');
 const { startServer, PLATFORM } = require('./server');
 const { checkForUpdates } = require('./updater');
+const wallpaper = require('./wallpaper');
 
 // Packaged app: web UI + native helper live in Resources. Development: straight from the repo.
 const repoRoot = path.join(__dirname, '..');
@@ -11,11 +12,32 @@ const paths = app.isPackaged
   ? { root: path.join(process.resourcesPath, 'web'), nativeDir: path.join(process.resourcesPath, 'native'), repoRoot: null }
   : { root: repoRoot, nativeDir: path.join(__dirname, 'native-bin', PLATFORM), repoRoot };
 
-let server = null;
+let server = null, mainWin = null;
+
+/** Wallpaper mode: the page's "Use as wallpaper" button (via the local server) or the menu. */
+async function startWallpaper(){
+  await wallpaper.start({ url: server.url, nativeDir: paths.nativeDir, onStop: stopWallpaper });
+  if (mainWin && !mainWin.isDestroyed()){
+    if (mainWin.isFullScreen()){                 // macOS: leave the fullscreen Space before hiding, or it stays behind empty
+      await new Promise(ok => { mainWin.once('leave-full-screen', ok); mainWin.setFullScreen(false); setTimeout(ok, 1500); });
+    }
+    mainWin.hide();
+  }
+}
+async function stopWallpaper(){
+  await wallpaper.stop({ nativeDir: paths.nativeDir });
+  if (mainWin && !mainWin.isDestroyed()) mainWin.show(); else createWindow();
+}
+const hooks = {
+  wallpaper: async on => {
+    try{ await (on ? startWallpaper() : stopWallpaper()); return { ok: true }; }
+    catch(e){ return { ok: false, error: String(e.message || e) }; }
+  },
+};
 
 async function createWindow(){
-  server = server || await startServer(paths);
-  const win = new BrowserWindow({
+  server = server || await startServer({ ...paths, hooks });
+  const win = mainWin = new BrowserWindow({
     width: 1280, height: 800, minWidth: 640, minHeight: 420,
     title: 'Capstellation',
     backgroundColor: '#050505',
@@ -27,7 +49,8 @@ async function createWindow(){
   win.once('ready-to-show', () => {
     win.show();
     setTimeout(() => checkForUpdates(win).catch(() => {}), 2500);   // ask about updates once the window is up
-    setInterval(() => checkForUpdates(win).catch(() => {}), 6 * 3600 * 1000);   // and every 6 hours while it's open
+    // and every 6 hours while it's open (not while it's quietly being the wallpaper)
+    setInterval(() => { if (!wallpaper.state.active && !win.isDestroyed()) checkForUpdates(win).catch(() => {}); }, 6 * 3600 * 1000);
   });
 
   // Links (AudD, Spotify dashboard…) open in the normal browser; Spotify login stays in-app.
@@ -44,12 +67,14 @@ app.whenReady().then(() => {
   // the page may use the microphone (Listen → Mic) and fullscreen; nothing else
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(['media', 'fullscreen'].includes(permission)));
   // menu: standard app menu plus "Check for Updates…" (Windows has no menu bar; use Ctrl+U)
-  const checkNow = () => { const w = BrowserWindow.getAllWindows()[0]; if (w) checkForUpdates(w, { quiet: false }).catch(() => {}); };
+  const checkNow = () => { if (mainWin && !mainWin.isDestroyed()) checkForUpdates(mainWin, { quiet: false }).catch(() => {}); };
+  const toggleWallpaper = () => hooks.wallpaper(!wallpaper.state.active);
   if (process.platform === 'darwin'){
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: app.name, submenu: [
         { role: 'about' },
         { label: 'Check for Updates…', click: checkNow },
+        { label: 'Use as Wallpaper / Stop', click: toggleWallpaper },
         { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
         { type: 'separator' }, { role: 'quit' } ] },
       { role: 'editMenu' },
@@ -58,11 +83,19 @@ app.whenReady().then(() => {
     ]));
   } else {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'App', visible: false, submenu: [ { label: 'Check for Updates…', accelerator: 'Ctrl+U', click: checkNow } ] },
+      { label: 'App', visible: false, submenu: [
+        { label: 'Check for Updates…', accelerator: 'Ctrl+U', click: checkNow },
+        { label: 'Use as Wallpaper', accelerator: 'Ctrl+Shift+W', click: toggleWallpaper } ] },
     ]));
   }
   createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  // clicking the Dock icon brings the normal window back (and stops wallpaper mode)
+  app.on('activate', () => {
+    if (wallpaper.state.active) stopWallpaper();
+    else if (!mainWin || mainWin.isDestroyed()) createWindow();
+  });
 });
 
-app.on('window-all-closed', () => { server?.close(); app.quit(); });
+// closing the window while it's the wallpaper keeps the wallpaper going (stop it from the tray icon)
+app.on('window-all-closed', () => { if (!wallpaper.state.active){ server?.close(); app.quit(); } });
+app.on('before-quit', () => { wallpaper.stop({ nativeDir: paths.nativeDir }); });

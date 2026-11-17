@@ -179,7 +179,7 @@ function askMac(player){
 }
 
 /* ------------------------------------------------------------------------------------------ */
-function createServer({ root, tap }){
+function createServer({ root, tap, hooks = {} }){
   let cache = { at: 0, data: null, pending: null };
   const last = { key: undefined, error: null };
 
@@ -335,6 +335,11 @@ function createServer({ root, tap }){
           try{ return json(res, await recognize(a.token || '', Number(a.seconds) || 6)); }
           catch(e){ return json(res, { status: 'error', error: { error_message: 'recognition failed: ' + (e.message || e) } }); }
         }
+        if (url.pathname === '/wallpaper'){
+          if (!hooks.wallpaper) return json(res, { ok: false, error: 'only available in the Capstellation app' });
+          let a = {}; try{ a = JSON.parse(body.toString() || '{}'); }catch{}
+          return json(res, await hooks.wallpaper(a.on !== false));
+        }
         if (url.pathname === '/audd'){
           try{
             const r = await get('https://api.audd.io/', { method: 'POST', body, headers: { 'Content-Type': req.headers['content-type'] || '' } });
@@ -376,10 +381,10 @@ function tapCommand({ nativeDir, repoRoot }){
 }
 
 /** Start everything; tries ports 8787… so the app keeps the same address (and saved settings). */
-async function startServer({ root, nativeDir, repoRoot, port = 8787 } = {}){
+async function startServer({ root, nativeDir, repoRoot, hooks, port = 8787 } = {}){
   const tap = new AudioTap();
   tap.start(tapCommand({ nativeDir, repoRoot }));
-  const server = createServer({ root, tap });
+  const server = createServer({ root, tap, hooks });
   for (let p = port; p < port + 10; p++){
     try{
       await new Promise((ok, bad) => { server.once('error', bad); server.listen(p, '127.0.0.1', ok); });

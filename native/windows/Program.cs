@@ -6,8 +6,12 @@
 //   P <base64>             the same audio as 16 kHz mono 16-bit PCM, for song recognition
 //   N <json>               ~2.5×/s: what's playing (from Windows' media controls)
 //   A <key> <base64>       album art for the current track, sent once per track
+//
+// Also: --wallpaper <hwnd> <x> <y> <w> <h> puts the app's wallpaper window behind the desktop icons,
+//       --wallpaper-restore repaints the normal desktop picture afterwards.
 // Notes and errors go to stderr.
 
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using NAudio.Wave;
@@ -133,10 +137,15 @@ sealed class Analyzer
 
 static class Program
 {
-    static async Task Main()
+    static async Task<int> Main(string[] args)
     {
+        // one-off jobs for the app's wallpaper mode
+        if (args.Length >= 6 && args[0] == "--wallpaper") return Wallpaper.Attach(args);
+        if (args.Length >= 1 && args[0] == "--wallpaper-restore") return Wallpaper.Restore();
+
         StartAudio();
         await NowPlayingLoop();
+        return 0;
     }
 
     /// <summary>Listens to what the speakers/headphones are playing (loopback), never the microphone.</summary>
@@ -269,5 +278,81 @@ static class Program
         if (a.Contains("amazon")) return "amazon";
         if (a.Contains("chrome") || a.Contains("msedge") || a.Contains("firefox") || a.Contains("opera") || a.Contains("brave")) return "browser";
         return "windows";
+    }
+}
+
+/// <summary>
+/// Puts a window behind the desktop icons (the way wallpaper apps do it):
+/// ask Explorer to split the desktop into its icon layer and a wallpaper layer, then parent our window
+/// to the wallpaper layer. Windows 11 24H2 moved that layer inside Progman, so both layouts are handled.
+/// </summary>
+static class Wallpaper
+{
+    delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindow(string? cls, string? title);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string? cls, string? title);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr lParam);
+    [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint msg, IntPtr w, IntPtr l, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint action, uint param, StringBuilder? sb, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint action, uint param, string? str, uint flags);
+
+    const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
+    const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77;
+
+    public static int Attach(string[] a)
+    {
+        var win = new IntPtr(long.Parse(a[1]));
+        int x = int.Parse(a[2]), y = int.Parse(a[3]), w = int.Parse(a[4]), h = int.Parse(a[5]);
+        if (!IsWindow(win)) { Console.Error.WriteLine("The wallpaper window wasn't found."); return 2; }
+
+        var progman = FindWindow("Progman", null);
+        if (progman == IntPtr.Zero) { Console.Error.WriteLine("Couldn't find the desktop (Progman)."); return 3; }
+        // 0x052C: ask Explorer to create the wallpaper layer behind the icons
+        SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(0x1), 0, 1000, out _);
+        SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0, 1000, out _);
+
+        // classic layout (Windows 10, 11 before 24H2): a top-level WorkerW right after the one holding the icons
+        IntPtr worker = IntPtr.Zero;
+        EnumWindows((top, _) =>
+        {
+            if (FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero)
+                worker = FindWindowEx(IntPtr.Zero, top, "WorkerW", null);
+            return true;
+        }, IntPtr.Zero);
+
+        int ox = x - GetSystemMetrics(SM_XVIRTUALSCREEN), oy = y - GetSystemMetrics(SM_YVIRTUALSCREEN);
+        if (worker != IntPtr.Zero)
+        {
+            SetParent(win, worker);
+            SetWindowPos(win, IntPtr.Zero, ox, oy, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            Console.WriteLine("ok workerw");
+            return 0;
+        }
+
+        // Windows 11 24H2+: the icons (SHELLDLL_DefView) and the wallpaper layer (WorkerW) are children of Progman.
+        // Sit between them: under the icons, above the plain wallpaper.
+        var icons = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
+        if (icons == IntPtr.Zero) { Console.Error.WriteLine("Couldn't find the desktop icon layer."); return 4; }
+        SetParent(win, progman);
+        SetWindowPos(win, icons, ox, oy, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        var layer = FindWindowEx(progman, IntPtr.Zero, "WorkerW", null);
+        if (layer != IntPtr.Zero) SetWindowPos(layer, win, 0, 0, 0, 0, 0x0001 | 0x0002 | SWP_NOACTIVATE);   // keep the old wallpaper below us
+        Console.WriteLine("ok progman");
+        return 0;
+    }
+
+    /// <summary>Re-apply the current wallpaper so Windows repaints it after our window is gone.</summary>
+    public static int Restore()
+    {
+        const uint SPI_GETDESKWALLPAPER = 0x0073, SPI_SETDESKWALLPAPER = 0x0014;
+        var sb = new StringBuilder(520);
+        SystemParametersInfo(SPI_GETDESKWALLPAPER, (uint)sb.Capacity, sb, 0);
+        SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, sb.ToString(), 0);
+        Console.WriteLine("ok");
+        return 0;
     }
 }

@@ -26,7 +26,7 @@
     "files": [
       "main.js",
       "server.js",
-      "updater.js",
+      "updater.js", "wallpaper.js",
       "package.json"
     ],
     "extraResources": [

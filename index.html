@@ -59,7 +59,9 @@ body.glitching #time{translate:var(--gx,0) 0;text-shadow:calc(var(--gx,0px)*-1.5
 body.glitching #word{translate:calc(var(--gx,0px)*-1) 0;text-shadow:-4px 0 rgba(255,0,90,.8),4px 0 rgba(0,230,255,.8),0 0 40px var(--wordGlow2)}
 canvas#sky{position:absolute;inset:0;width:100%;height:100%}
 canvas#vis{position:absolute;left:50%;bottom:2.2vh;transform:translateX(-50%);width:min(44vw,620px);height:clamp(36px,6vh,64px);pointer-events:none;transition:opacity .6s;filter:drop-shadow(0 0 5px var(--visGlow,rgba(255,160,40,.6)))}
-body.novis canvas#vis{opacity:0}
+body.novis canvas#vis, body.radial canvas#vis{opacity:0}
+/* wallpaper mode: just the picture, no controls */
+body.wallpaper #ui, body.wallpaper #hint{display:none}
 #visRow{display:none;margin-top:10px}
 #visRow.on{display:flex}
 #clock{position:absolute;top:5.5vh;left:0;right:0;text-align:center;pointer-events:none;transition:opacity .6s}
@@ -217,6 +219,14 @@ body.helpopen #help{display:block}
         <label class="chk"><input type="checkbox" id="chkGlitch"> Glitch</label>
         <label class="chk" title="Warp-speed stars during instrumental parts"><input type="checkbox" id="chkInterlude"> Interludes</label>
       </div>
+      <div class="row" style="margin-top:8px">
+        <span class="lbl">Visualizer</span>
+        <button data-vis="bars">Bars</button>
+        <button data-vis="radial">Radial</button>
+      </div>
+      <div id="wallRow" class="row" style="margin-top:8px;display:none">
+        <button id="btnWallpaper" style="flex:1" title="Plays behind your desktop icons. Turn it off from the Capstellation icon in the menu bar / system tray.">Use as wallpaper</button>
+      </div>
       <input type="file" id="fileImg" accept="image/*" hidden>
     </div>
     <div id="visRow" class="row"><span id="visInfo" style="flex:1;opacity:.75;line-height:1.45"></span></div>
@@ -228,6 +238,8 @@ body.helpopen #help{display:block}
 
 <script>
 "use strict";
+const WALLPAPER = new URLSearchParams(location.search).has('wallpaper');
+if (WALLPAPER) document.body.classList.add('wallpaper', 'zen');
 /* =========================================================================
    Config
    ========================================================================= */
@@ -381,10 +393,11 @@ bg.blurAlbum = store.get('bgBlurAlbum', '1') === '1';   // album art blurred by 
 bg.glitch  = store.get('bgGlitch', '') === '1';
 bg.liquid  = store.get('bgLiquid', '1') === '1';     // flowing liquid warp (like the original video)
 bg.light   = store.get('bgLight', '1') === '1';
-bg.interlude = store.get('bgInterlude', '1') === '1';   // warp-speed sky while there's music but no words      // light bar around the screen edges
+bg.interlude = store.get('bgInterlude', '1') === '1';
+let visStyle = store.get('visStyle', 'bars');            // 'bars' along the bottom | 'radial' around a spinning cover   // warp-speed sky while there's music but no words      // light bar around the screen edges
 let albumURL = null, shownURL = null, bgImg = null, bgSeed = 1, bgSrcCanvas = null, bgToken = 0;
 const bgA = $('#bgBlur'), bgB = $('#bgReveal');
-function setArt(url){ albumURL = url; applyBackground(); }
+function setArt(url){ albumURL = url; applyBackground(); loadDisc(); }
 
 /** Loads an image, trying CORS first (so its colors can be read), then without. */
 function loadImg(url){
@@ -777,6 +790,13 @@ $('#chkCollage').onchange = e => { bg.collage = e.target.checked; store.set('bgC
 $('#btnShuffle').onclick = () => { bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; renderBackground(); };
 $('#chkLiquid').onchange = e => { bg.liquid = e.target.checked; store.set('bgLiquid', bg.liquid ? '1' : ''); };
 $('#chkLight').onchange = e => { bg.light = e.target.checked; store.set('bgLight', bg.light ? '1' : ''); document.body.classList.toggle('nolightbar', !bg.light); };
+function setVisStyle(v){
+  visStyle = v === 'radial' ? 'radial' : 'bars'; store.set('visStyle', visStyle);
+  document.body.classList.toggle('radial', visStyle === 'radial');
+  document.querySelectorAll('[data-vis]').forEach(b => b.classList.toggle('on', b.dataset.vis === visStyle));
+  if (visStyle === 'radial') loadDisc();
+}
+document.querySelectorAll('[data-vis]').forEach(b => b.onclick = () => setVisStyle(b.dataset.vis));
 $('#chkInterlude').onchange = e => { bg.interlude = e.target.checked; store.set('bgInterlude', bg.interlude ? '1' : ''); };
 $('#chkGlitch').onchange = e => { bg.glitch = e.target.checked; store.set('bgGlitch', bg.glitch ? '1' : ''); if (!bg.glitch){ gctx.clearRect(0,0,gcv.width,gcv.height); document.body.classList.remove('glitching'); } };
 $('#fileImg').onchange = e => { const f = e.target.files?.[0]; if (f) useImageFile(f); e.target.value = ''; };
@@ -958,6 +978,8 @@ function pickCenter(){
       score += (i===recent.length-1) ? -Math.abs(d-0.34) * 2 : Math.min(d, 0.45); // near the last one, away from older
     });
     score += rand(0, 0.05);
+    const rz = radialZone();
+    if (rz && Math.hypot(c.x*W - rz.x, c.y*H - rz.y) < rz.r * 1.3) score -= 1;
     if (score > bestScore){ bestScore = score; best = c; }
   }
   return best;
@@ -1000,7 +1022,7 @@ function addConstellation(line){
 }
 /** Where the visualizer lives (its highest position, when the UI is showing), padded a little. */
 function visZone(){
-  if (document.body.classList.contains('novis')) return null;
+  if (document.body.classList.contains('novis') || visStyle === 'radial') return null;
   const vw = Math.min(W*0.44, 620), vh = clamp(H*0.06, 36, 64);
   return { x0: W/2 - vw/2 - 16, x1: W/2 + vw/2 + 16, y0: H - H*0.022 - vh - 10 };
 }
@@ -1018,6 +1040,22 @@ function fitConstellation(c){
   if (up > 0) c.center.y -= up / H;
   if (minX < 40) c.center.x += (40 - minX) / W;
   else if (maxX > W - 40) c.center.x -= (maxX - (W - 40)) / W;
+  // radial visualizer: slide the whole constellation out of the record's circle
+  const rz = radialZone();
+  if (!rz || c.fitting) return;
+  for (let k=0;k<4;k++){
+    let worst = 0, cx = 0, cy = 0;
+    for (const s of c.stars){
+      const [x, y] = starXY(c, s); cx += x; cy += y;
+      worst = Math.max(worst, rz.r - Math.hypot(x - rz.x, y - rz.y));
+    }
+    if (worst <= 0) break;
+    cx /= c.stars.length; cy /= c.stars.length;
+    let dx = cx - rz.x, dy = cy - rz.y, d = Math.hypot(dx, dy);
+    if (d < 1){ dx = c.center.x < 0.5 ? -1 : 1; dy = 0; d = 1; }
+    c.center.x += dx/d * (worst + 6) / W; c.center.y += dy/d * (worst + 6) / H;
+    c.fitting = true; fitConstellation(c); c.fitting = false;    // keep it on screen too
+  }
 }
 
 /** Never more than MAX_ON_SCREEN constellations: drop the faintest fading ones first, then the oldest. */
@@ -1091,6 +1129,85 @@ function starXY(c, s){
 }
 
 /* =========================================================================
+   Radial visualizer: the album cover spins slowly in the middle like a record,
+   with the bars standing out around it (lows at the bottom, highs at the top, mirrored)
+   ========================================================================= */
+const disc = { url:null, art:null, fade:0 };
+async function loadDisc(){
+  if (visStyle !== 'radial' || !albumURL || albumURL === disc.url) return;
+  const want = albumURL, img = await loadImg(albumURL);
+  if (!img || want !== albumURL) return;
+  // pre-cut a round copy once, so each frame is one rotated drawImage
+  const S = 640, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.beginPath(); g.arc(S/2, S/2, S/2, 0, Math.PI*2); g.clip();
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, sc = S / Math.min(iw, ih);
+  g.drawImage(img, (S - iw*sc)/2, (S - ih*sc)/2, iw*sc, ih*sc);
+  // a hint of vinyl: faint grooves and a sheen
+  g.strokeStyle = 'rgba(0,0,0,.10)'; g.lineWidth = 1;
+  for (let r = S*0.2; r < S/2; r += 5){ g.beginPath(); g.arc(S/2, S/2, r, 0, Math.PI*2); g.stroke(); }
+  const sh = g.createLinearGradient(0, 0, S, S);
+  sh.addColorStop(0.35, 'rgba(255,255,255,0)'); sh.addColorStop(0.5, 'rgba(255,255,255,.10)'); sh.addColorStop(0.65, 'rgba(255,255,255,0)');
+  g.fillStyle = sh; g.fillRect(0, 0, S, S);
+  disc.art = c; disc.url = want;
+}
+/** Middle of the radial visualizer and how much room it takes (with its tallest bars). */
+function radialZone(){
+  if (visStyle !== 'radial' || document.body.classList.contains('novis')) return null;
+  const u = Math.min(W, H), rd = u * 0.1, bar = u * 0.09;
+  const top = document.body.classList.contains('noclock') ? 0.5 : 0.57;
+  return { x: W/2, y: H*top, rd, bar, r: rd + bar + u*0.035 };
+}
+function drawRadial(now){
+  const z = radialZone();
+  disc.fade += ((z ? 1 : 0) - disc.fade) * 0.08;
+  if (!z || disc.fade < 0.01) return;
+  const L = vis.levels, n = 120, u = Math.min(W, H);
+  const pulse = 1 + lbBoost * 0.035;
+  const rd = z.rd * pulse, r0 = rd + u*0.012;
+  ctx.save();
+  ctx.globalAlpha = disc.fade;
+  // bars
+  const grad = ctx.createConicGradient ? ctx.createConicGradient(-Math.PI/2, z.x, z.y) : null;
+  if (grad){ grad.addColorStop(0, visColors.edgeL); grad.addColorStop(0.5, visColors.mid); grad.addColorStop(1, visColors.edgeR); }
+  ctx.strokeStyle = grad || visColors.mid;
+  ctx.lineWidth = Math.max(1.5, (2*Math.PI*r0 / n) * 0.5);
+  ctx.lineCap = 'round';
+  ctx.shadowColor = visColors.glow; ctx.shadowBlur = 10;
+  ctx.beginPath();
+  for (let j=0;j<n;j++){
+    const a = -Math.PI/2 + (j + 0.5) / n * Math.PI*2;
+    const t = 1 - Math.abs(((j + 0.5) / n) * 2 - 1);          // 0 at the top → 1 at the bottom
+    const f = (1 - t) * (VIS_BARS - 1), i0 = Math.floor(f), fr = f - i0;
+    const v = L[i0] * (1 - fr) + (L[Math.min(VIS_BARS-1, i0+1)] || 0) * fr;
+    const len = Math.max(2, v * z.bar);
+    const c = Math.cos(a), s = Math.sin(a);
+    ctx.moveTo(z.x + c*r0, z.y + s*r0); ctx.lineTo(z.x + c*(r0 + len), z.y + s*(r0 + len));
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // the record
+  ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 30;
+  ctx.fillStyle = '#0b0908';
+  ctx.beginPath(); ctx.arc(z.x, z.y, rd, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  if (disc.art){
+    ctx.translate(z.x, z.y); ctx.rotate((now / 1000) * (Math.PI*2 / 36));   // one turn every 36 s
+    ctx.drawImage(disc.art, -rd, -rd, rd*2, rd*2);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5; ctx.globalAlpha = disc.fade * 0.8;
+  ctx.beginPath(); ctx.arc(z.x, z.y, rd, 0, Math.PI*2); ctx.stroke();
+  // spindle hole
+  ctx.globalAlpha = disc.fade;
+  ctx.fillStyle = 'rgba(8,6,5,.92)';
+  ctx.beginPath(); ctx.arc(z.x, z.y, rd*0.075, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = rgba(ink.star, 0.5); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(z.x, z.y, rd*0.075, 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
+}
+
+/* =========================================================================
    Interludes: when the music plays on with no words (intros, solos, beat drops, outros),
    the sky goes to warp speed. Stars stream out from the middle as fast as the bass pushes them,
    kicks send out rings, big hits fire shooting stars, the old constellations swirl slowly,
@@ -1134,7 +1251,9 @@ function drawInterlude(p, now, dt){
   if (hearing && beat.kick) I.speed += 0.25 + beat.kickSize * 0.08;
 
   // vanishing point wanders a little so it doesn't feel like a screensaver
-  I.vx = 0.5 + 0.06*Math.sin(now/7300); I.vy = 0.5 + 0.05*Math.sin(now/5900 + 1);
+  const rz = radialZone();
+  if (rz){ I.vx = rz.x / W; I.vy = rz.y / H; }
+  else { I.vx = 0.5 + 0.06*Math.sin(now/7300); I.vy = 0.5 + 0.05*Math.sin(now/5900 + 1); }
   const cx = I.vx*W, cy = I.vy*H, far = Math.hypot(W, H) * 0.6;
 
   // ---- warp stars ----
@@ -1148,7 +1267,7 @@ function drawInterlude(p, now, dt){
     const v = (s.r / far * 2.4 + 0.08) * s.z * I.speed * u * 0.9;     // faster the further out (perspective)
     const r0 = s.r;
     s.r += v * dt;
-    if (s.r > far){ s.a = Math.random()*Math.PI*2; s.r = rand(2, u*0.06); s.z = rand(0.4, 1.4); s.w = Math.random(); continue; }
+    if (s.r > far){ s.a = Math.random()*Math.PI*2; s.r = rz ? rand(rz.rd, rz.rd*1.3) : rand(2, u*0.06); s.z = rand(0.4, 1.4); s.w = Math.random(); continue; }
     const tail = Math.min(s.r - 1, Math.max(1.2, v * 0.045 * (1 + I.speed)));
     const ca = Math.cos(s.a), sa = Math.sin(s.a);
     const bright = clamp(s.r / (u*0.35), 0, 1);
@@ -1231,6 +1350,7 @@ function drawSky(p, now){
   const dotGlow = sprite('dot');
   const hot = new Map(live.slice(-HOT_STARS).reverse().map((c, r) => [c, [1, 0.8, 0.65, 0.52, 0.42][r]]));
   drawInterlude(p, now, sdt);
+  drawRadial(now);
   const dim = 1 - interlude.k * 0.55;           // old lyrics step back while the music has the stage
 
   for (const c of sky){
@@ -1674,6 +1794,12 @@ let helperUp = false;
 /** Wording that depends on where we're running: the Mac helper, the Mac app, or the Windows app. */
 let PLATFORM = 'mac', PLAY_SOMETHING = 'Play something in Spotify or Apple Music';
 const IN_APP = /Electron/.test(navigator.userAgent);
+if (IN_APP && !WALLPAPER) $('#wallRow').style.display = '';
+$('#btnWallpaper').onclick = async e => {
+  e.stopPropagation();
+  try{ const r = await (await fetch('wallpaper', { method:'POST' })).json(); if (!r.ok) setStatus('Couldn’t start wallpaper mode: ' + (r.error || 'unknown error')); }
+  catch{ setStatus('Wallpaper mode needs the latest Capstellation app.'); }
+};
 function applyPlatform(){
   const win = PLATFORM === 'win';
   $('[data-mode="mac"]').textContent = win ? 'Windows' : 'Mac';
@@ -1757,6 +1883,7 @@ addEventListener('keydown', e => {
 /* ---------- boot ---------- */
 (async () => {
   initLiquid();
+  setVisStyle(visStyle);
   setArt(placeholderCover());     // something warm to look at before a real cover arrives
   try{
     const r = await fetch('audio', { cache:'no-store' }), info = r.ok ? await r.json() : {};
