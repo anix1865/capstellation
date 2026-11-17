@@ -27,6 +27,7 @@ async function createWindow(){
   win.once('ready-to-show', () => {
     win.show();
     setTimeout(() => checkForUpdates(win).catch(() => {}), 2500);   // ask about updates once the window is up
+    setInterval(() => checkForUpdates(win).catch(() => {}), 6 * 3600 * 1000);   // and every 6 hours while it's open
   });
 
   // Links (AudD, Spotify dashboard…) open in the normal browser; Spotify login stays in-app.
@@ -42,7 +43,24 @@ async function createWindow(){
 app.whenReady().then(() => {
   // the page may use the microphone (Listen → Mic) and fullscreen; nothing else
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(['media', 'fullscreen'].includes(permission)));
-  if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+  // menu: standard app menu plus "Check for Updates…" (Windows has no menu bar; use Ctrl+U)
+  const checkNow = () => { const w = BrowserWindow.getAllWindows()[0]; if (w) checkForUpdates(w, { quiet: false }).catch(() => {}); };
+  if (process.platform === 'darwin'){
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { label: app.name, submenu: [
+        { role: 'about' },
+        { label: 'Check for Updates…', click: checkNow },
+        { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+        { type: 'separator' }, { role: 'quit' } ] },
+      { role: 'editMenu' },
+      { label: 'View', submenu: [ { role: 'reload' }, { role: 'togglefullscreen' }, { role: 'toggleDevTools' } ] },
+      { role: 'windowMenu' },
+    ]));
+  } else {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { label: 'App', visible: false, submenu: [ { label: 'Check for Updates…', accelerator: 'Ctrl+U', click: checkNow } ] },
+    ]));
+  }
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

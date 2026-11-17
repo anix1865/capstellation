@@ -47,7 +47,7 @@ The first launch builds the audio tap. macOS asks for Automation and Screen & Sy
 
 **Installers:** every push to `main` runs the *Desktop app* workflow, which builds a macOS `.dmg` (Apple Silicon + Intel) and a Windows `Setup.exe` and publishes them as a **GitHub Release** (`v0.1.<build>`). Download the latest from the repo's *Releases* page.
 
-**Updates:** each time the installed app opens, it checks the latest release. If there's a newer version it asks **Install now / Later**; *Install now* downloads it, replaces the app and restarts it (on Windows it runs the new installer). Until the app is signed with an Apple Developer ID, macOS sees each update as a new app, so it will ask for the Automation and Screen & System Audio Recording permissions again after updating. The builds aren't signed with a developer certificate yet, so the first time you open them:
+**Updates:** each time the installed app opens (and every 6 hours while it's open), it checks the latest release. You can also check any time: **Capstellation → Check for Updates…** on macOS, **Ctrl+U** on Windows. If there's a newer version it asks **Install now / Later**; *Install now* downloads it, replaces the app and restarts it (on Windows it runs the new installer). Until the app is signed with an Apple Developer ID, macOS sees each update as a new app, so it will ask for the Automation and Screen & System Audio Recording permissions again after updating. The builds aren't signed with a developer certificate yet, so the first time you open them:
 - **macOS:** right-click the app → **Open**. If it says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Capstellation.app`.
 - **Windows:** SmartScreen → **More info → Run anyway**.
 

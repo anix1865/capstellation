@@ -73,18 +73,45 @@ function installWin(exe){
   return true;
 }
 
+/**
+ * The latest release. GitHub's API allows only 60 requests an hour per network address (a campus
+ * network can use that up), so the version comes from the normal Releases page's redirect, and the
+ * download links follow the build's file names. The API is only asked for the release notes.
+ */
+async function latestRelease(){
+  const r = await fetch(`https://github.com/${REPO}/releases/latest`, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': UA } });
+  const m = /\/releases\/tag\/(v?[\d.]+)/.exec(r.url);
+  if (!m) throw new Error(`no release found (${r.status})`);
+  const tag = m[1], v = tag.replace(/^v/, ''), dl = `https://github.com/${REPO}/releases/download/${tag}/`;
+  const names = [`Capstellation-${v}-arm64.dmg`, `Capstellation-${v}-x64.dmg`, `Capstellation-Setup-${v}.exe`];
+  const rel = { tag_name: tag, body: '', assets: names.map(name => ({ name, browser_download_url: dl + name })) };
+  try{                                                                  // release notes: nice to have, not needed
+    const a = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, { headers: { 'User-Agent': UA, Accept: 'application/vnd.github+json' } });
+    if (a.ok) rel.body = (await a.json()).body || '';
+  }catch{}
+  return rel;
+}
+
 async function checkForUpdates(win, { quiet = true } = {}){
-  if (!app.isPackaged) return;                                         // running from source: `git pull` updates it
+  if (!app.isPackaged){                                                // running from source: `git pull` updates it
+    if (!quiet) dialog.showMessageBox(win, { type: 'info', message: 'Running from source', detail: 'This copy updates with `git pull` (then restart `npm start`).' });
+    return;
+  }
+  const say = (message, detail = '') => !quiet && dialog.showMessageBox(win, { type: 'info', message, detail });
   let rel;
-  try{
-    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { 'User-Agent': UA, Accept: 'application/vnd.github+json' } });
-    if (!r.ok) return;
-    rel = await r.json();
-  }catch{ return; }                                                    // offline: try again next launch
+  try{ rel = await latestRelease(); }
+  catch(e){ say('Couldn’t check for updates', 'Are you online? ' + (e.message || e)); return; }   // offline: try again later
   const latest = (rel.tag_name || '').replace(/^v/, '');
-  if (!latest || !isNewer(latest, app.getVersion())) return;
+  if (!latest || !isNewer(latest, app.getVersion())){ say('You’re up to date', `Capstellation ${app.getVersion()} is the latest version.`); return; }
   const asset = pickAsset(rel.assets || []);
-  if (!asset) return;
+  if (!asset){ say(`Capstellation ${latest} is available`, 'but there’s no download for this computer in that release.'); return; }
+  if (checking) return;                                                // a prompt is already open
+  checking = true;
+  try{ await offer(win, rel, latest, asset); } finally { checking = false; }
+}
+
+let checking = false;
+async function offer(win, rel, latest, asset){
 
   const notes = (rel.body || '').split('\n').filter(l => l.trim()).slice(0, 6).join('\n');
   const { response } = await dialog.showMessageBox(win, {
