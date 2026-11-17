@@ -1132,7 +1132,7 @@ function starXY(c, s){
 
 /* =========================================================================
    Radial visualizer: the album cover spins slowly in the middle like a record,
-   with the bars standing out around it (lows at the bottom, highs at the top, mirrored)
+   with the bars standing out around it (bass at the left and right, treble at the top and bottom)
    ========================================================================= */
 const disc = { url:null, art:null, fade:0 };
 async function loadDisc(){
@@ -1170,19 +1170,36 @@ function drawRadial(now){
   ctx.save();
   ctx.globalAlpha = disc.fade;
   // bars
-  const grad = ctx.createConicGradient ? ctx.createConicGradient(-Math.PI/2, z.x, z.y) : null;
-  if (grad){ grad.addColorStop(0, visColors.edgeL); grad.addColorStop(0.5, visColors.mid); grad.addColorStop(1, visColors.edgeR); }
+  // colors: same at the left and right (the bass), same at the top and bottom, so the ring has no seam
+  const grad = ctx.createConicGradient ? ctx.createConicGradient(0, z.x, z.y) : null;
+  if (grad){
+    [[0, visColors.mid], [0.25, visColors.edgeL], [0.5, visColors.mid], [0.75, visColors.edgeR], [1, visColors.mid]]
+      .forEach(([o, c]) => grad.addColorStop(o, c));
+  }
   ctx.strokeStyle = grad || visColors.mid;
   ctx.lineWidth = Math.max(1.5, (2*Math.PI*r0 / n) * 0.5);
   ctx.lineCap = 'round';
   ctx.shadowColor = visColors.glow; ctx.shadowBlur = 10;
+  // mirrored in both directions: bass at the left and right, treble toward the top and bottom
+  const raw = drawRadial.raw || (drawRadial.raw = new Float32Array(n));
+  for (let j=0;j<n;j++){
+    const a = (j + 0.5) / n * Math.PI*2;
+    const t = Math.abs(Math.asin(Math.sin(a))) / (Math.PI/2);    // 0 at the sides → 1 at top / bottom
+    const f = Math.pow(t, 0.85) * (VIS_BARS - 1), i0 = Math.floor(f), fr = f - i0;
+    const v = L[i0] * (1 - fr) + (L[Math.min(VIS_BARS-1, i0+1)] || 0) * fr;
+    raw[j] = v * (0.62 + 0.5 * (1 - t));                         // the sides stand out more
+  }
+  // soften the steps between neighbours so the outline flows
+  const sm = drawRadial.sm || (drawRadial.sm = new Float32Array(n));
+  for (let j=0;j<n;j++){
+    const p2 = raw[(j-2+n)%n], p1 = raw[(j-1+n)%n], q1 = raw[(j+1)%n], q2 = raw[(j+2)%n];
+    const target = (raw[j]*0.4 + (p1 + q1)*0.2 + (p2 + q2)*0.1);
+    sm[j] += (target - sm[j]) * (target > sm[j] ? 0.6 : 0.2);
+  }
   ctx.beginPath();
   for (let j=0;j<n;j++){
-    const a = -Math.PI/2 + (j + 0.5) / n * Math.PI*2;
-    const t = 1 - Math.abs(((j + 0.5) / n) * 2 - 1);          // 0 at the top → 1 at the bottom
-    const f = (1 - t) * (VIS_BARS - 1), i0 = Math.floor(f), fr = f - i0;
-    const v = L[i0] * (1 - fr) + (L[Math.min(VIS_BARS-1, i0+1)] || 0) * fr;
-    const len = Math.max(2, v * z.bar);
+    const a = (j + 0.5) / n * Math.PI*2;
+    const len = Math.max(2, Math.min(1.15, sm[j]) * z.bar);
     const c = Math.cos(a), s = Math.sin(a);
     ctx.moveTo(z.x + c*r0, z.y + s*r0); ctx.lineTo(z.x + c*(r0 + len), z.y + s*(r0 + len));
   }
