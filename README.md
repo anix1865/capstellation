@@ -2,16 +2,19 @@
 
 A full-screen lyric visualizer. Each lyric line becomes a constellation of word-stars, the word being sung glows large under its star, the last 10 lines stay on screen while older ones fade, and the background is the album cover, blurred, with sharp patches drifting across it. Skipping forward or back clears the sky and starts again from the new spot.
 
-## Run it
-
-The page needs to run from a local server (not opened as a file) so Spotify login and audio capture work:
+## Run it (Mac)
 
 ```bash
+git clone https://github.com/anix1865/capstellation.git
 cd capstellation
-python3 -m http.server 8080 --bind 127.0.0.1
+python3 capstellation.py
 ```
 
-Then open **http://127.0.0.1:8080** in Chrome or Edge.
+That starts the app and opens **http://127.0.0.1:8787** in your browser. Chrome or Edge works best. Then play something in **Spotify** or **Apple Music**.
+
+The first time, macOS asks whether Terminal may control Spotify / Music. Click **OK**. If you clicked Don't Allow, turn it back on in *System Settings → Privacy & Security → Automation → Terminal*.
+
+The helper uses only Python's standard library, so there's nothing to install. If `python3` isn't found, run `xcode-select --install` once.
 
 ## Keys
 
@@ -19,41 +22,41 @@ Then open **http://127.0.0.1:8080** in Chrome or Edge.
 |---|---|
 | F / double-click | Fullscreen |
 | H | Hide all UI. Click anywhere (or press H) to bring it back; moving the mouse won't |
-| V | Toggle the visualizer |
 | C | Toggle the clock |
+| V | Toggle the visualizer |
 | [ / ] | Nudge lyric timing ±250 ms (saved) |
-| Space, ← / → | Play/pause and seek ±5 s (Demo & Search modes) |
-
-The controls and cursor also auto-hide after 3 seconds without mouse movement.
-
-## Visualizer
-
-A slim bar visualizer sits at the bottom center, colored with the complement of the album cover's main color. In **Listen** mode it uses the audio you already shared. In **Spotify** and **Search** modes, click *Share tab audio* (or *Mic*) in the panel to feed it. The demo song has no audio, so the visualizer animates on its own.
 
 ## Sources
 
-**Spotify (most accurate).** Reads the exact track, position, pauses and skips every 1.2 s.
-1. Create an app at developer.spotify.com/dashboard.
-2. Add the Redirect URI shown in the app (e.g. `http://127.0.0.1:8080/`). Spotify doesn't accept `localhost`, so use `127.0.0.1`.
-3. Paste the Client ID → Connect. Check Spotify's current rules for development-mode apps (account type, user allow-list).
+**Mac (default).** `capstellation.py` asks the Spotify and Apple Music desktop apps, through AppleScript, what's playing: title, artist, album, exact position, and play/pause. The page checks every 0.8 s, so skips and pauses show up almost immediately and timing is exact. It needs no keys or accounts, and nothing leaves your Mac. If both apps are open, whichever is playing wins.
 
-**Listen (any app: Apple Music, Amazon Music, YouTube…).** Captures audio and identifies the song plus its position with the AudD API, then re-checks every ~16 s. It also reacts to silence: the lyrics pause, and when sound comes back the song is re-checked right away, which is how skips get caught.
-- Get a token at dashboard.audd.io (each check is one API request).
-- Click *Share audio & listen* and choose the browser tab playing your music (the web players work) or your whole screen with "Share system audio" turned on (Windows / ChromeOS, and recent Chrome on newer macOS). *Use mic* is a fallback.
-- If AudD ever blocks browser requests (CORS), put a tiny proxy in front of it.
+**Spotify (Web API).** Use this on a non-Mac computer, or to follow Spotify playing on another device. Create an app at developer.spotify.com/dashboard, add the Redirect URI shown in the app (e.g. `http://127.0.0.1:8787/`), and paste the Client ID.
 
-**Search (manual).** Search LRCLIB, pick the song, and press Play when it starts in your player.
+**Listen.** For anything else (Amazon Music, YouTube…). It records the audio and identifies the song with the AudD API, which needs a token from dashboard.audd.io. A token is needed because recognizing a song from raw sound means matching it against a fingerprint database.
 
-**Demo.** A built-in song with original placeholder lyrics.
+Lyrics come from **lrclib.net** (free, no key). Covers come from Spotify, or the iTunes Search API as a fallback.
 
-Lyrics come from **lrclib.net** (free, no key). Covers come from Spotify/AudD, or the iTunes Search API as a fallback.
+## Background
+
+- **Album art:** blurred, with three soft sharp spots drifting independently.
+- **My image:** pick one image (or drag it onto the screen). It shows sharp by default; tick **Blur** for the same blur + drifting-spots treatment. The image is remembered in this browser.
+
+The clock, sung word, star labels and lines take their color from whatever background is showing. They use the image's own hue at a lightness that keeps them readable. If an image is too bright for light text, it gets a dark shade, but only as much as needed. The visualizer uses the complementary color.
+
+## Visualizer
+
+A slim mirrored bar visualizer sits at the bottom center. In **Listen** mode it uses the audio you already shared. In **Mac** and **Spotify** modes, click **Share audio** (choose your screen and switch on its audio, where your Chrome/macOS offers that) or **Mic** in the panel.
 
 ## How sync works
 
-All sources call one function, `setPlayback(positionMs, isPlaying)`. If the reported position differs from the predicted one by more than 2.5 s, that counts as a skip: the current constellations fade out, and the sky rebuilds from the line playing now. Word timing is spread across each line by word length, because LRC files only time whole lines.
+Every source calls `setPlayback(positionMs, isPlaying)`. If the reported position differs from the predicted one by more than 2.5 s, that counts as a skip: the sky fades out and rebuilds from the current line.
 
-Tunables are at the top of the script: `MAX_CAPTIONS`, `MAX_ON_SCREEN`, `FADE_SPEED`, `DIE_SPEED`, `SEEK_THRESHOLD`, `LISTEN_CLIP_MS`, `LISTEN_EVERY`, `SP_POLL_MS`.
+Lyric files only time whole lines, so word timing is estimated. The app learns each song's singing pace (ms per syllable) and sings each line at that pace from its start. When a file has real per-word timestamps (enhanced LRC), those are used instead.
 
-## Going native later
+Tunables are at the top of the script: `MAX_CAPTIONS`, `MAX_ON_SCREEN`, `FADE_SPEED`, `DIE_SPEED`, `SEEK_THRESHOLD`, `MAC_POLL_MS`, `LISTEN_CLIP_MS`, `LISTEN_EVERY`, `SP_POLL_MS`.
 
-A browser can't see what other apps are playing. For a true desktop app with no setup, wrap the page in Electron or Tauri and read now-playing info from the OS: MediaRemote / ScriptingBridge on macOS, `GlobalSystemMediaTransportControlsSessionManager` on Windows, MPRIS on Linux. That gives track, position and seeks for every player, and the visual code stays the same.
+## Roadmap: native Mac app
+
+- Wrap the page in a native shell (Swift/WKWebView, Tauri or Electron) so there's no Terminal step.
+- Use **ShazamKit** (Apple's free, on-device song recognition for native apps) in place of AudD for Listen mode, so recognizing any audio source needs no API key.
+- Read Now Playing for every player from the system instead of per-app AppleScript.

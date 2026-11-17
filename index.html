@@ -3,18 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Constellation Lyrics</title>
+<title>Capstellation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,800&family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-:root{ --accent:#ff6a1a; --glow:#ffd23f; --ink:#f3e9dc; }
+:root{ --accent:#ff6a1a; --ink:#f3e9dc;
+  /* text colors: rewritten from the background image by setTextColors() */
+  --clock:#ffd6bd; --clockGlow:rgba(255,110,40,.5);
+  --word:#ffd23f; --wordGlow1:rgba(255,214,90,.9); --wordGlow2:rgba(255,160,40,.7); --wordGlow3:rgba(255,100,20,.5);
+  --shade:0; }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:#050505;overflow:hidden;color:var(--ink);font-family:'Space Mono',ui-monospace,monospace}
 #stage{position:fixed;inset:0;overflow:hidden}
 .bg{position:absolute;inset:-8%;background-size:cover;background-position:center;transition:background-image .8s}
 #bgBlur{filter:blur(70px) saturate(1.4) brightness(.5);transform:scale(1.15)}
 #bgReveal{filter:blur(3px) saturate(1.2) brightness(.85)}
+body.sharpbg #bgBlur{filter:none;transform:none;inset:0}
+body.sharpbg #bgReveal{display:none}
+#shade{position:absolute;inset:0;background:#000;opacity:var(--shade);transition:opacity 1s}
 #tint{position:absolute;inset:0;background:
   radial-gradient(120% 80% at 50% 50%, transparent 30%, rgba(0,0,0,.72) 100%),
   linear-gradient(180deg, rgba(0,0,0,.35), transparent 30%, transparent 70%, rgba(0,0,0,.5));}
@@ -29,15 +36,16 @@ body:not(.idle):not(.zen) canvas#vis{bottom:calc(2.2vh + 44px)}  /* lift above t
 #visRow{display:none;margin-top:10px}
 #visRow.on{display:flex}
 #clock{position:absolute;top:5.5vh;left:0;right:0;text-align:center;pointer-events:none;transition:opacity .6s}
-#date{font-family:'Instrument Serif',serif;font-size:clamp(14px,1.5vw,22px);letter-spacing:.02em;opacity:.85;color:#ffd9c2}
-#time{font-family:'Instrument Serif',serif;font-size:clamp(72px,12vw,190px);line-height:.92;color:#ffd6bd;
-  text-shadow:0 0 30px rgba(255,120,40,.55),0 0 90px rgba(255,90,20,.35)}
+#date{font-family:'Instrument Serif',serif;font-size:clamp(14px,1.5vw,22px);letter-spacing:.02em;opacity:.9;color:var(--clock);
+  text-shadow:0 1px 10px rgba(0,0,0,.5);transition:color 1.2s}
+#time{font-family:'Instrument Serif',serif;font-size:clamp(72px,12vw,190px);line-height:.92;color:var(--clock);
+  text-shadow:0 2px 24px rgba(0,0,0,.45),0 0 30px var(--clockGlow),0 0 90px var(--clockGlow);transition:color 1.2s,text-shadow 1.2s}
 body.noclock #clock{opacity:0}
 #word{position:absolute;left:50%;top:60%;font-family:'Fraunces',serif;font-style:italic;font-weight:800;
-  font-size:clamp(30px,4.6vw,72px);color:var(--glow);white-space:nowrap;pointer-events:none;
+  font-size:clamp(30px,4.6vw,72px);color:var(--word);white-space:nowrap;pointer-events:none;
   transform:translate(-50%,0) scale(1);opacity:0;
-  text-shadow:0 0 14px rgba(255,214,90,.9),0 0 40px rgba(255,160,40,.7),0 0 90px rgba(255,100,20,.5);
-  transition:left .35s cubic-bezier(.2,.8,.2,1),top .35s cubic-bezier(.2,.8,.2,1),opacity .35s}
+  text-shadow:0 2px 14px rgba(0,0,0,.5),0 0 14px var(--wordGlow1),0 0 40px var(--wordGlow2),0 0 90px var(--wordGlow3);
+  transition:left .35s cubic-bezier(.2,.8,.2,1),top .35s cubic-bezier(.2,.8,.2,1),opacity .35s,color 1.2s}
 #word.pop{animation:pop .35s ease-out}
 @keyframes pop{0%{transform:translate(-50%,0) scale(.86);filter:blur(3px)}100%{transform:translate(-50%,0) scale(1);filter:blur(0)}}
 
@@ -64,13 +72,14 @@ input:focus{border-color:var(--accent)}
 .row{display:flex;gap:6px;align-items:center;margin-top:8px}
 .row > input{flex:1}
 code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-break:break-all}
-#results{max-height:180px;overflow:auto;margin-top:8px}
-#results button{display:block;width:100%;text-align:left;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#results small{opacity:.6}
-#transport{display:none;margin-top:12px;gap:8px;align-items:center}
-#transport.on{display:flex}
-#scrub{flex:1;accent-color:var(--accent)}
-#tpos{min-width:84px;text-align:right;opacity:.75}
+#bgBox{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,220,190,.1)}
+#bgBox .row{margin-top:0}
+#bgBox .lbl{opacity:.75;margin-right:auto}
+#staticRow{display:none;margin-top:8px!important}
+#staticRow.on{display:flex}
+label.chk{display:flex;align-items:center;gap:6px;cursor:pointer;opacity:.9}
+label.chk input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
 #status{margin-top:10px;opacity:.7;min-height:1.2em;line-height:1.45}
 #meter{height:4px;border-radius:2px;background:rgba(255,255,255,.1);margin-top:8px;overflow:hidden}
 #meter i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s}
@@ -88,6 +97,7 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
 <div id="stage">
   <div id="bgBlur" class="bg"></div>
   <div id="bgReveal" class="bg"></div>
+  <div id="shade"></div>
   <div id="tint"></div>
   <div id="grain"></div>
   <canvas id="sky"></canvas>
@@ -106,18 +116,18 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
 
   <div id="panel" class="glass">
     <div class="tabs">
-      <button data-mode="demo">Demo</button>
-      <button data-mode="listen">Listen</button>
+      <button data-mode="mac">Mac</button>
       <button data-mode="spotify">Spotify</button>
-      <button data-mode="search">Search</button>
+      <button data-mode="listen">Listen</button>
     </div>
 
-    <div class="pane" data-pane="demo">
-      <p>A built-in demo song so you can see the effect right away. Try dragging the scrubber: the sky resets and starts again from that point.</p>
+    <div class="pane" data-pane="mac">
+      <p>Reads exactly what the Spotify or Apple Music app on this Mac is playing: song, position, pauses and skips. No account or key needed.</p>
+      <p style="margin:0">Start the helper in Terminal, then open the link it prints:<br><code>python3 capstellation.py</code></p>
     </div>
 
     <div class="pane" data-pane="listen">
-      <p>Works with any app (Spotify, Apple Music, Amazon Music…). It listens to your device's audio, recognizes the song and where you are in it, then re-checks every few seconds to catch skips. Needs a free <a href="https://dashboard.audd.io" target="_blank" style="color:var(--glow)">AudD</a> API token.</p>
+      <p>Works with any app (Spotify, Apple Music, Amazon Music…). It listens to your device's audio, recognizes the song and where you are in it, then re-checks every few seconds to catch skips. Needs a free <a href="https://dashboard.audd.io" target="_blank" style="color:var(--accent)">AudD</a> API token.</p>
       <input id="auddToken" type="password" placeholder="AudD API token" autocomplete="off">
       <div class="row">
         <button id="btnListen" style="flex:1">Share audio &amp; listen</button>
@@ -127,7 +137,7 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
     </div>
 
     <div class="pane" data-pane="spotify">
-      <p>Most accurate: reads the exact song, position, pauses and skips straight from Spotify. Create an app at <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:var(--glow)">developer.spotify.com</a> and add this Redirect URI:<br><code id="redirUri"></code></p>
+      <p>Most accurate: reads the exact song, position, pauses and skips straight from Spotify. Create an app at <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:var(--accent)">developer.spotify.com</a> and add this Redirect URI:<br><code id="redirUri"></code></p>
       <input id="spClient" type="text" placeholder="Spotify Client ID" autocomplete="off">
       <div class="row">
         <button id="btnSpConnect" style="flex:1">Connect Spotify</button>
@@ -135,23 +145,24 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
       </div>
     </div>
 
-    <div class="pane" data-pane="search">
-      <p>Pick a song by hand, then press play when it starts in your music app. Use <b>[</b> and <b>]</b> to nudge timing.</p>
-      <div class="row" style="margin-top:0"><input id="q" type="text" placeholder="Song and artist"><button id="btnSearch">Search</button></div>
-      <div id="results"></div>
+    <div id="bgBox">
+      <div class="row">
+        <span class="lbl">Background</span>
+        <button data-bg="album">Album art</button>
+        <button data-bg="static">My image</button>
+      </div>
+      <div id="staticRow" class="row">
+        <button id="btnPickImg" style="flex:1">Choose image…</button>
+        <label class="chk"><input type="checkbox" id="chkBlur"> Blur</label>
+      </div>
+      <input type="file" id="fileImg" accept="image/*" hidden>
     </div>
-
-    <div id="transport">
-      <button id="btnPlay">Play</button>
-      <input id="scrub" type="range" min="0" max="1000" value="0">
-      <span id="tpos">0:00 / 0:00</span>
-    </div>
-    <div id="visRow" class="row"><span style="flex:1;opacity:.75">Visualizer needs audio:</span><button id="btnVisTab">Share tab audio</button><button id="btnVisMic">Mic</button></div>
+    <div id="visRow" class="row"><span style="flex:1;opacity:.75">Visualizer needs audio:</span><button id="btnVisTab">Share audio</button><button id="btnVisMic">Mic</button></div>
     <div id="status"></div>
   </div>
 
   <div id="nowplaying" class="glass"><div id="npTitle"></div><div id="npArtist"></div></div>
-  <div id="hints" class="glass">F fullscreen · H hide (click to show) · C clock · V visualizer · [ ] timing · ← → seek · Space play</div>
+  <div id="hints" class="glass">F fullscreen · H hide (click to show) · C clock · V visualizer · [ ] timing</div>
 </div>
 
 <script>
@@ -167,6 +178,7 @@ const SEEK_THRESHOLD = 2500;   // ms of disagreement that counts as a skip
 const LISTEN_CLIP_MS = 7000;   // length of audio sample sent for recognition
 const LISTEN_EVERY   = 9000;   // pause between re-checks while listening
 const SP_POLL_MS     = 1200;
+const MAC_POLL_MS    = 800;
 
 const $ = s => document.querySelector(s);
 const store = {
@@ -174,7 +186,6 @@ const store = {
   set(k, v){ try{ localStorage.setItem(k, v); }catch{} },
   del(k){ try{ localStorage.removeItem(k); }catch{} },
 };
-const fmt = ms => { ms = Math.max(0, ms|0); const s = Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
 const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
 const rand = (a,b) => a + Math.random()*(b-a);
 function setStatus(msg){ $('#status').textContent = msg || ''; }
@@ -189,7 +200,6 @@ const engine = {
   offset: Number(store.get('offset', 0)) || 0,
   shown: -1,
   trackKey: null,
-  loop: false,
 };
 function rawPos(){ return engine.posAnchor + (engine.playing ? performance.now() - engine.perfAnchor : 0); }
 function pos(){ return rawPos() + engine.offset; }
@@ -200,7 +210,6 @@ function setPlayback(ms, playing, force=false){
   const jumped = Math.abs(rawPos() - ms) > SEEK_THRESHOLD;
   engine.posAnchor = ms; engine.perfAnchor = performance.now(); engine.playing = playing;
   if (jumped || force) resetSky();
-  syncTransport();
 }
 
 /* ---------- lyrics parsing ---------- */
@@ -279,63 +288,188 @@ function spreadPlain(text, durationMs){
   return rows.map((text,i) => ({ t: start + i*step, text }));
 }
 
-function loadTrack({ key, title, artist, lines, duration, art, loop=false, startAt=0, playing=false }){
+function loadTrack({ key, title, artist, lines, duration, art, startAt=0, playing=false }){
   engine.trackKey = key;
   engine.duration = duration || (lines.length ? lines[lines.length-1].t + 6000 : 0);
   engine.lines = prepareLines(lines, engine.duration);
-  engine.loop = loop;
   engine.posAnchor = startAt; engine.perfAnchor = performance.now(); engine.playing = playing;
   resetSky(true);
   $('#npTitle').textContent = title || '';
   $('#npArtist').textContent = artist || '';
   $('#nowplaying').classList.toggle('on', !!title);
   if (art) setArt(art);
-  syncTransport();
 }
 
 /* =========================================================================
    Background: blurred album art + slowly drifting sharp "reveal" blobs
    ========================================================================= */
-let artURL = null;
-function setArt(url){
-  if (url === artURL) return;
-  artURL = url;
-  const css = `url("${url}")`;
-  $('#bgBlur').style.backgroundImage = css;
-  $('#bgReveal').style.backgroundImage = css;
-  extractAccent(url);
+/*  What's on screen is either the album cover (always blurred, with drifting sharp spots)
+    or your own static image (sharp unless you tick Blur). */
+const bg = {
+  source: store.get('bgSource', 'album'),           // 'album' | 'static'
+  blur: store.get('bgBlur', '') === '1',            // only used for the static image
+  staticURL: store.get('bgImage', null),
+};
+let albumURL = null, shownURL = null;
+function setArt(url){ albumURL = url; applyBackground(); }
+function applyBackground(){
+  const useStatic = bg.source === 'static' && bg.staticURL;
+  const url = useStatic ? bg.staticURL : albumURL;
+  const blurred = useStatic ? bg.blur : true;
+  document.body.classList.toggle('sharpbg', !blurred);
+  if (url && url !== shownURL){
+    shownURL = url;
+    const css = `url("${url}")`;
+    $('#bgBlur').style.backgroundImage = css;
+    $('#bgReveal').style.backgroundImage = css;
+  }
+  if (url) analyzeImage(url, blurred);
+  document.querySelectorAll('[data-bg]').forEach(b => b.classList.toggle('on', b.dataset.bg === bg.source));
+  $('#staticRow').classList.toggle('on', bg.source === 'static');
+  $('#chkBlur').checked = bg.blur;
 }
-/** Visualizer colors: the complement of the cover's main color, spread a little either side. */
-let visColors = ['hsl(202,80%,62%)', 'hsl(172,75%,58%)', 'hsl(232,78%,66%)'];
-function setPalette(r, g, b){
+
+/* ---------- color helpers ---------- */
+const lin = c => { c /= 255; return c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); };
+const relLum = (r,g,b) => 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+const contrast = (a, b) => (Math.max(a,b) + 0.05) / (Math.min(a,b) + 0.05);
+function hslToRgb(h, s, l){
+  s/=100; l/=100;
+  const k = n => (n + h/30) % 12, a = s * Math.min(l, 1-l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n), 1)));
+  return [f(0)*255, f(8)*255, f(4)*255].map(Math.round);
+}
+function rgbToHsl(r, g, b){
   r/=255; g/=255; b/=255;
-  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min, l = (max+min)/2;
   let h = 0;
   if (d){ h = max===r ? ((g-b)/d) % 6 : max===g ? (b-r)/d + 2 : (r-g)/d + 4; h = (h*60 + 360) % 360; }
-  const s = clamp(d / (1 - Math.abs(max + min - 1) || 1) * 100, 55, 90);
+  const s = d ? d / (1 - Math.abs(2*l - 1)) : 0;
+  return [h, s*100, l*100];
+}
+/** Lightest-needed version of a hue that still reads against the background. */
+function readable(h, s, bgL, target){
+  for (let l = 52; l <= 97; l++){ if (contrast(relLum(...hslToRgb(h, s, l)), bgL) >= target) return l; }
+  return 97;
+}
+
+/** Visualizer colors: the complement of the background's main color, spread a little either side. */
+let visColors = ['hsl(202,80%,62%)', 'hsl(172,75%,58%)', 'hsl(232,78%,66%)'];
+function setVisPalette(h, s){
+  s = clamp(s, 55, 90);
   const c = (h + 180) % 360;
   visColors = [`hsl(${c},${s}%,62%)`, `hsl(${(c+330)%360},${s}%,58%)`, `hsl(${(c+30)%360},${s}%,66%)`];
 }
-function extractAccent(url){
+
+/** Canvas colors for stars, labels, lines, crosshair (updated with the text colors). */
+const ink = { star:[255,244,228], label:[255,232,210], line:[255,236,214], ring:'rgba(255,215,120,.95)' };
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+/**
+ * Text colors that follow the background's own hue but stay readable:
+ *  - measure how bright the brightest common areas of the background are
+ *  - if it's too bright for light text, lay a dark shade over it (only as much as needed)
+ *  - then pick the most colorful lightness of that hue that clears the contrast target
+ */
+const MAX_BG_LUM = 0.15;      // backgrounds brighter than this get shaded down (just enough)
+function setTextColors(h, s, bgL){
+  const shade = bgL > MAX_BG_LUM ? 1 - MAX_BG_LUM / bgL : 0;
+  const effL = bgL * (1 - shade);
+  const root = document.documentElement.style;
+  root.setProperty('--shade', shade.toFixed(3));
+
+  const grey = s < 12;                                          // black & white covers stay neutral
+  const sClock = grey ? 0 : clamp(s*0.55, 18, 55);
+  const sWord  = grey ? 0 : clamp(s, 55, 95);
+  const lClock = readable(h, sClock, effL, 4.5);                // big clock text: comfortably readable
+  const lWord  = readable(h, sWord, effL, 3.6);                 // the sung word is huge + glowing, so it can be more colorful
+  root.setProperty('--clock', `hsl(${h},${sClock}%,${Math.max(lClock, 80)}%)`);
+  root.setProperty('--clockGlow', `hsla(${h},${grey ? 0 : clamp(s,40,90)}%,50%,.45)`);
+  root.setProperty('--word', `hsl(${h},${sWord}%,${Math.max(lWord, 64)}%)`);
+  root.setProperty('--wordGlow1', `hsla(${h},${sWord}%,62%,.85)`);
+  root.setProperty('--wordGlow2', `hsla(${h},${sWord}%,50%,.6)`);
+  root.setProperty('--wordGlow3', `hsla(${h},${sWord}%,40%,.45)`);
+  root.setProperty('--accent', `hsl(${h},${grey ? 0 : clamp(s,50,90)}%,58%)`);
+
+  const sInk = grey ? 0 : clamp(s*0.35, 10, 40);
+  ink.star  = hslToRgb(h, sInk, 93);
+  ink.label = hslToRgb(h, sInk, Math.max(readable(h, sInk, effL, 4.5), 84));
+  ink.line  = hslToRgb(h, sInk, 88);
+  ink.ring  = `hsla(${h},${sWord}%,${Math.max(lWord, 70)}%,.95)`;
+}
+
+let analyzeToken = 0;
+function analyzeImage(url, blurred){
+  const my = ++analyzeToken;
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.onload = () => {
+    if (my !== analyzeToken) return;
     try{
-      const c = document.createElement('canvas'); c.width = c.height = 32;
-      const g = c.getContext('2d'); g.drawImage(img, 0, 0, 32, 32);
-      const d = g.getImageData(0,0,32,32).data;
+      const N = 48, c = document.createElement('canvas'); c.width = c.height = N;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, N, N);
+      const d = g.getImageData(0, 0, N, N).data;
       let best = null, bestScore = -1;
+      const lums = [];
       for (let i=0;i<d.length;i+=4){
         const r=d[i], gg=d[i+1], b=d[i+2];
         const max=Math.max(r,gg,b), min=Math.min(r,gg,b);
-        const sat = max ? (max-min)/max : 0, score = sat * max;
+        const score = (max ? (max-min)/max : 0) * max;
         if (score > bestScore){ bestScore = score; best = [r,gg,b]; }
+        lums.push(relLum(r,gg,b));
       }
-      if (best && bestScore > 60){ document.documentElement.style.setProperty('--accent', `rgb(${best.join(',')})`); setPalette(...best); }
-    }catch{ /* image not CORS-readable: keep default accent */ }
+      lums.sort((a,b)=>a-b);
+      // blurred mode dims the image (brightness .85 on the sharp spots ≈ 0.7× luminance)
+      // judge by the bright-ish areas (75th percentile), not the single brightest pixel
+      const bgL = lums[Math.floor(lums.length*0.75)] * (blurred ? 0.7 : 1);
+      let [h, s] = rgbToHsl(...best);
+      if (bestScore < 40) s = 0;                                  // nothing colorful in the image
+      setTextColors(Math.round(h), Math.round(s), bgL);
+      setVisPalette(Math.round(h), Math.round(s));
+    }catch{ /* image not readable (CORS): keep the current colors */ }
   };
   img.src = url;
 }
+
+/* ---------- static image: upload / drop / blur toggle ---------- */
+function setBgSource(src){
+  bg.source = src; store.set('bgSource', src);
+  if (src === 'static' && !bg.staticURL){ $('#fileImg').click(); }
+  applyBackground();
+}
+document.querySelectorAll('[data-bg]').forEach(b => b.onclick = () => setBgSource(b.dataset.bg));
+$('#btnPickImg').onclick = () => $('#fileImg').click();
+$('#chkBlur').onchange = e => { bg.blur = e.target.checked; store.set('bgBlur', bg.blur ? '1' : ''); applyBackground(); };
+$('#fileImg').onchange = e => { const f = e.target.files?.[0]; if (f) useImageFile(f); e.target.value = ''; };
+function useImageFile(file){
+  if (!file.type.startsWith('image/')){ setStatus('That file isn’t an image.'); return; }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    // shrink huge photos so they can be remembered for next time
+    const scale = Math.min(1, 2560 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width*scale); c.height = Math.round(img.height*scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    let data = c.toDataURL('image/jpeg', 0.9);
+    bg.staticURL = data; bg.source = 'static'; store.set('bgSource', 'static');
+    try{ localStorage.setItem('bgImage', data); setStatus('Background image set.'); }
+    catch{ setStatus('Background set, but it’s too large to remember after a reload.'); }
+    applyBackground();
+  };
+  img.onerror = () => setStatus('Couldn’t open that image.');
+  img.src = url;
+}
+// drop an image anywhere on the screen
+addEventListener('dragover', e => { if ([...e.dataTransfer.items].some(i => i.kind === 'file')){ e.preventDefault(); document.body.classList.add('dragging'); } });
+addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+addEventListener('drop', e => {
+  document.body.classList.remove('dragging');
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if (f){ e.preventDefault(); useImageFile(f); }
+});
+
 let lastMask = 0;
 /* Each spot drifts on its own slow Lissajous path, so they wander independently
    and occasionally pass over each other. Add/remove entries to taste. */
@@ -466,6 +600,7 @@ function drawSky(p, now){
   });
 
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6a1a';
+  const ringColor = ink.ring;
   const u = Math.min(W,H);
   const labelSize = clamp(u*0.014, 9, 13);
   let active = null;
@@ -476,14 +611,14 @@ function drawSky(p, now){
     if (c.link && c.stars[0].t <= p){
       const [x1,y1] = starXY(c.link.from, c.link.from.stars[c.link.idx]);
       const [x2,y2] = starXY(c, c.stars[0]);
-      ctx.strokeStyle = `rgba(255,232,205,${0.18*a})`; ctx.lineWidth = 0.8;
+      ctx.strokeStyle = rgba(ink.line, 0.18*a); ctx.lineWidth = 0.8;
       ctx.setLineDash([2,5]); ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.setLineDash([]);
     }
     // edges draw themselves in
     for (const e of c.edges){
       const prog = clamp((p - e.t) / 380, 0, 1); if (prog <= 0) continue;
       const [x1,y1] = starXY(c, c.stars[e.a]), [x2,y2] = starXY(c, c.stars[e.b]);
-      ctx.strokeStyle = `rgba(255,236,214,${0.6*a})`; ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(ink.line, 0.6*a); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1+(x2-x1)*prog, y1+(y2-y1)*prog); ctx.stroke();
     }
     // stars + small labels
@@ -495,10 +630,10 @@ function drawSky(p, now){
       const tw = 0.75 + 0.25*Math.sin(now/600 + s.seed);
       ctx.save();
       ctx.shadowColor = accent; ctx.shadowBlur = 10;
-      ctx.fillStyle = `rgba(255,244,228,${a*tw})`;
+      ctx.fillStyle = rgba(ink.star, a*tw);
       ctx.beginPath(); ctx.arc(x, y, (1.6 + 1.4*k) * (1 + (1-k)*1.5), 0, Math.PI*2); ctx.fill();
       ctx.restore();
-      ctx.fillStyle = `rgba(255,232,210,${0.72*a*k})`;
+      ctx.fillStyle = rgba(ink.label, 0.8*a*k);
       ctx.fillText(s.text.toLowerCase(), x, y + 7);
       if (!c.dying && c === live[live.length-1] && p <= c.line.end + 1200) active = { c, s, i, x, y };
     });
@@ -512,7 +647,7 @@ function drawSky(p, now){
     ctx.save();
     ctx.translate(x, y); ctx.rotate(rot);
     ctx.shadowColor = accent; ctx.shadowBlur = 14;
-    ctx.strokeStyle = 'rgba(255,215,120,.95)'; ctx.lineWidth = 1.3;
+    ctx.strokeStyle = ringColor; ctx.lineWidth = 1.3;
     ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.stroke();
     ctx.beginPath();
     for (let q=0;q<4;q++){ const ang = q*Math.PI/2; ctx.moveTo(Math.cos(ang)*r*0.45, Math.sin(ang)*r*0.45); ctx.lineTo(Math.cos(ang)*r*1.55, Math.sin(ang)*r*1.55); }
@@ -553,7 +688,7 @@ async function connectVisAudio(useMic){
     else {
       stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }, systemAudio:'include' });
       stream.getVideoTracks().forEach(t => t.stop());
-      if (!stream.getAudioTracks().length){ setStatus('No audio was shared — pick the music tab again and turn on “Share tab audio”.'); return; }
+      if (!stream.getAudioTracks().length){ setStatus('No audio was shared. Choose your screen (or a music tab) and turn on the audio switch, or use Mic.'); return; }
     }
   }catch{ setStatus('Audio for the visualizer was blocked or cancelled.'); return; }
   vis.stream?.getTracks().forEach(t => t.stop()); vis.ac?.close?.();
@@ -567,7 +702,7 @@ async function connectVisAudio(useMic){
 }
 function currentAnalyser(){ return (mode === 'listen' && listen.analyser) || vis.analyser; }
 function updateVisRow(){
-  const need = !document.body.classList.contains('novis') && !currentAnalyser() && (mode === 'spotify' || mode === 'search');
+  const need = !document.body.classList.contains('novis') && !currentAnalyser() && (mode === 'spotify' || mode === 'mac');
   $('#visRow').classList.toggle('on', need);
 }
 $('#btnVisTab').onclick = () => connectVisAudio(false);
@@ -591,12 +726,6 @@ function drawVis(now){
       const a = Math.floor(f0/nyq*n), b = Math.max(a+1, Math.ceil(f1/nyq*n));
       let m = 0; for (let k=a;k<b && k<n;k++) m = Math.max(m, vis.buf[k]);
       targets[i] = Math.pow(m/255, 1.6) * (0.75 + i/VIS_BARS*0.6);   // tilt up the treble a bit
-    }
-  } else if (mode === 'demo' && engine.playing){       // the demo has no audio, so fake a gentle groove
-    const t = rawPos()/1000, beat = Math.pow(Math.max(0, Math.cos(t*Math.PI*2*1.6)), 6);
-    for (let i=0;i<VIS_BARS;i++){
-      const fall = 1 - i/VIS_BARS;
-      targets[i] = clamp(0.18 + beat*0.6*fall*fall + 0.2*Math.sin(t*3.1 + i*0.7)*Math.sin(t*1.3 + i*0.23) + Math.random()*0.08, 0.04, 1);
     }
   }
   for (let i=0;i<VIS_BARS;i++){ const tg = targets[i]; L[i] += (tg - L[i]) * (tg > L[i] ? 0.55 : 0.14); }
@@ -629,54 +758,18 @@ function tickClock(){
 setInterval(tickClock, 1000); tickClock();
 
 function frame(now){
-  if (engine.loop && engine.duration && rawPos() >= engine.duration) setPlayback(0, true, true);
-  if (!engine.loop && engine.duration && engine.playing && rawPos() >= engine.duration && mode !== 'listen' && mode !== 'spotify') setPlayback(engine.duration, false);
   const p = pos();
   updateLines(p);
   drawSky(p, now);
   animateMask(now);
   drawVis(now);
-  if (now % 250 < 17) syncTransport();
   requestAnimationFrame(frame);
 }
 
 /* =========================================================================
-   Transport (demo + search modes)
+   Placeholder background (before any song has played)
    ========================================================================= */
-let scrubbing = false;
-function syncTransport(){
-  const show = (mode === 'demo' || mode === 'search') && engine.lines.length;
-  $('#transport').classList.toggle('on', !!show);
-  if (!show) return;
-  $('#btnPlay').textContent = engine.playing ? 'Pause' : 'Play';
-  if (!scrubbing && engine.duration) $('#scrub').value = Math.round(rawPos() / engine.duration * 1000);
-  $('#tpos').textContent = `${fmt(rawPos())} / ${fmt(engine.duration)}`;
-}
-$('#btnPlay').onclick = () => setPlayback(rawPos(), !engine.playing);
-$('#scrub').addEventListener('input', () => { scrubbing = true; $('#tpos').textContent = `${fmt($('#scrub').value/1000*engine.duration)} / ${fmt(engine.duration)}`; });
-$('#scrub').addEventListener('change', () => { scrubbing = false; setPlayback($('#scrub').value/1000*engine.duration, engine.playing, true); });
-
-/* =========================================================================
-   Source: Demo (original lyrics, generated cover)
-   ========================================================================= */
-const DEMO_LRC = `
-[00:01.00]Neon hums along the overpass
-[00:05.20]I trace your name in window glass
-[00:09.40]Every streetlight leans in close
-[00:13.40]Like it knows the part I miss the most
-[00:19.00]Midnight, call me back again
-[00:23.00]Paint the static into something then
-[00:27.20]Hold the quiet, hold it gently
-[00:31.40]Till the city sings it back to me
-[00:36.00]Count the stars between the wires
-[00:40.00]Little sparks from distant fires
-[00:44.20]If you're listening, say it slow
-[00:48.40]I'll be the orbit you call home
-[00:53.00]Midnight, call me back again
-[00:57.00]Paint the static into something then
-[01:01.20]Hold the quiet, hold it gently
-[01:05.40]Till the city sings it back to me`;
-function demoCover(){
+function placeholderCover(){
   const c = document.createElement('canvas'); c.width = c.height = 900;
   const g = c.getContext('2d');
   g.fillStyle = '#070505'; g.fillRect(0,0,900,900);
@@ -687,11 +780,6 @@ function demoCover(){
   g.beginPath(); g.ellipse(430,760,290,190,0,0,Math.PI*2); g.fill();
   for (let i=0;i<9000;i++){ g.fillStyle = `rgba(255,220,180,${Math.random()*0.12})`; g.fillRect(Math.random()*900, Math.random()*900, 1.4, 1.4); }
   return c.toDataURL('image/jpeg', 0.9);
-}
-function startDemo(){
-  loadTrack({ key:'demo', title:'Orbit (demo)', artist:'Constellation Lyrics', lines: parseLRC(DEMO_LRC),
-              duration: 72000, art: demoCover(), loop: true, playing: true });
-  setStatus('Demo playing. Lyrics are original placeholder text.');
 }
 
 /* =========================================================================
@@ -724,7 +812,7 @@ async function fetchArt(title, artist){
     return u ? u.replace(/\d+x\d+bb/, '1200x1200bb') : null;
   }catch{ return null; }
 }
-/** Shared by Spotify / Listen / Search: look up lyrics then start the sky at `posMs`. */
+/** Shared by every source: look up lyrics, then start the sky at `posMs`. */
 let loadToken = 0;
 async function openSong({ key, title, artist, album, durationMs, art, posMs=0, playing=true, perfAt }){
   const my = ++loadToken;
@@ -733,37 +821,47 @@ async function openSong({ key, title, artist, album, durationMs, art, posMs=0, p
   const [lyr, itunesArt] = await Promise.all([ fetchLyrics({ title, artist, album, durationMs }), art ? null : fetchArt(title, artist) ]);
   if (my !== loadToken) return;
   const elapsed = perfAt ? performance.now() - perfAt : 0;
-  loadTrack({ key, title, artist, lines: lyr.lines, duration: durationMs, art: art || itunesArt || artURL, startAt: posMs + (playing ? elapsed : 0), playing });
+  loadTrack({ key, title, artist, lines: lyr.lines, duration: durationMs, art: art || itunesArt || albumURL, startAt: posMs + (playing ? elapsed : 0), playing });
   setStatus(lyr.instrumental ? 'Instrumental — no lyrics.' : !lyr.lines.length ? 'No lyrics found for this song.' :
             lyr.synced ? `${title} — ${artist}` : 'Only unsynced lyrics found; timing is estimated.');
 }
 
 /* =========================================================================
-   Source: Search (manual)
+   Source: Mac helper (capstellation.py reads Spotify / Apple Music via AppleScript)
    ========================================================================= */
-async function doSearch(){
-  const q = $('#q').value.trim(); if (!q) return;
-  setStatus('Searching…'); $('#results').innerHTML = '';
+let macTimer = null, macWasOk = null;
+async function macPoll(){
+  if (mode !== 'mac') return;
   try{
-    const r = await fetch('https://lrclib.net/api/search?' + new URLSearchParams({ q }));
-    const list = (await r.json()).filter(x => x.syncedLyrics).slice(0, 15);
-    if (!list.length){ setStatus('No synced lyrics found.'); return; }
-    setStatus('');
-    for (const x of list){
-      const b = document.createElement('button');
-      b.innerHTML = `${esc(x.trackName)} <small>— ${esc(x.artistName)} · ${fmt(x.duration*1000)}</small>`;
-      b.onclick = async () => {
-        const art = await fetchArt(x.trackName, x.artistName);
-        loadTrack({ key:'s'+x.id, title:x.trackName, artist:x.artistName, lines: parseLRC(x.syncedLyrics), duration: x.duration*1000, art: art || artURL, playing:false });
-        setStatus('Ready. Press Play (or Space) when the song starts.');
-      };
-      $('#results').appendChild(b);
+    const t0 = performance.now();
+    const r = await fetch('now', { cache:'no-store' });
+    const rtt = performance.now() - t0;
+    if (!r.ok) throw new Error('no helper');
+    const j = await r.json();
+    if (!j.ok){ setStatus(j.error || 'The Mac helper reported an error.'); }
+    else if (j.state === 'none'){
+      if (macWasOk !== 'idle') setStatus('Connected. Play something in Spotify or Apple Music.');
+      macWasOk = 'idle';
+      if (engine.playing) setPlayback(rawPos(), false);
+    } else {
+      const playing = j.state === 'playing';
+      const at = j.position_ms + (playing ? (j.age_ms || 0) + rtt/2 : 0);
+      const key = `${j.player}:${j.id}`;
+      if (key !== engine.trackKey){
+        macWasOk = 'track';
+        openSong({ key, title:j.title, artist:j.artist, album:j.album, durationMs:j.duration_ms || undefined,
+                   art:j.artwork || null, posMs:at, playing, perfAt: performance.now() });
+      } else if (engine.lines.length || engine.duration){
+        // positions here are exact, so only correct real drift (tiny jitter would make words twitch)
+        if (playing !== engine.playing || Math.abs(at - rawPos()) > 220) setPlayback(at, playing);
+      }
     }
-  }catch(e){ setStatus('Search failed — lyric lookups need to run from your own computer (see README).'); }
+  }catch{
+    setStatus('Mac helper isn’t running. In Terminal, in the capstellation folder: python3 capstellation.py, then open the link it prints.');
+    macWasOk = false;
+  }
+  macTimer = setTimeout(macPoll, MAC_POLL_MS);
 }
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-$('#btnSearch').onclick = doSearch;
-$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); e.stopPropagation(); });
 
 /* =========================================================================
    Source: Spotify (PKCE, polls currently-playing)
@@ -940,23 +1038,25 @@ $('#btnMic').onclick = () => startListening(true);
    Modes, chrome, keyboard
    ========================================================================= */
 let mode = null;
+const MODES = ['mac', 'spotify', 'listen'];
 function setMode(m){
+  if (!MODES.includes(m)) m = 'mac';
   if (m === mode) return;
   if (mode === 'listen' && m !== 'listen') stopListening();
   if (mode === 'spotify') clearTimeout(spTimer);
+  if (mode === 'mac') clearTimeout(macTimer);
   mode = m; store.set('mode', m);
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === m));
   setStatus('');
-  if (m === 'demo') startDemo();
-  else { loadToken++; loadTrack({ key:null, title:'', artist:'', lines:[], duration:0, art:artURL }); }
+  loadToken++; loadTrack({ key:null, title:'', artist:'', lines:[], duration:0 });
+  if (m === 'mac'){ macWasOk = null; macPoll(); }
   if (m === 'spotify'){
     if (store.get('sp_refresh')){ setStatus('Connecting to Spotify…'); spPoll(); }
     else setStatus('Connect your Spotify account to start.');
   }
   updateVisRow();
   if (m === 'listen') setStatus('Tip: share the tab playing Spotify / Apple Music / Amazon Music web, or your whole screen with “Share system audio”.');
-  syncTransport();
 }
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 
@@ -996,18 +1096,13 @@ addEventListener('keydown', e => {
     engine.offset += (k === ']' ? 250 : -250); store.set('offset', engine.offset);
     setStatus(`Timing offset: ${engine.offset > 0 ? '+' : ''}${engine.offset} ms`);
   }
-  else if ((mode === 'demo' || mode === 'search') && engine.lines.length){
-    if (k === ' '){ e.preventDefault(); setPlayback(rawPos(), !engine.playing); }
-    else if (k === 'arrowright') setPlayback(clamp(rawPos() + 5000, 0, engine.duration), engine.playing, true);
-    else if (k === 'arrowleft')  setPlayback(clamp(rawPos() - 5000, 0, engine.duration), engine.playing, true);
-  }
 });
 
 /* ---------- boot ---------- */
 (async () => {
-  setArt(demoCover());     // something warm to look at before a real cover arrives
+  setArt(placeholderCover());     // something warm to look at before a real cover arrives
   const fromSpotify = await handleSpotifyRedirect();
-  setMode(fromSpotify ? 'spotify' : (store.get('mode') || 'demo'));
+  setMode(fromSpotify ? 'spotify' : store.get('mode'));
   requestAnimationFrame(frame);
 })();
 </script>
