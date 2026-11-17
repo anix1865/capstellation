@@ -21,6 +21,26 @@ html,body{margin:0;height:100%;background:#050505;overflow:hidden;color:var(--in
 body.collage #bgBlur{filter:blur(24px) saturate(1.35) brightness(.5);transform:scale(1.04)}  /* lighter blur so the collage still reads */
 #bgReveal{filter:blur(3px) saturate(1.2) brightness(.85)}
 body.sharpbg #bgBlur{filter:none;transform:none;left:0;top:0;width:100%;height:100%}
+/* WebGL renderer (liquid + blur + drifting spots in one pass) replaces the two CSS layers when available */
+#bgGL{position:absolute;inset:0;width:100%;height:100%;display:none}
+body.gl #bgGL{display:block}
+body.gl #bgBlur, body.gl #bgReveal{visibility:hidden}
+/* light bar: a glow that travels around the screen edges, in the clock / lyric colors */
+@property --lbA{syntax:'<angle>';inherits:false;initial-value:0deg}
+#lightbar{position:absolute;inset:0;pointer-events:none;transition:opacity .8s;opacity:calc(.7 + var(--lbBoost,0)*.3)}
+#lightbar::before{content:'';position:absolute;inset:0;box-shadow:inset 0 0 38px -12px var(--wordGlow2),inset 0 0 2px 0 var(--wordGlow3)}
+#lightbar i,#lightbar b{position:absolute;inset:0;padding:3px;
+  background:conic-gradient(from var(--lbA),transparent 0turn,var(--clock) .05turn,var(--word) .1turn,transparent .2turn,transparent .5turn,var(--clock) .55turn,var(--word) .6turn,transparent .7turn);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:lbSpin 10s linear infinite}
+#lightbar b{padding:10px;filter:blur(14px);opacity:1}
+@keyframes lbSpin{to{--lbA:1turn}}
+body.nolightbar #lightbar{opacity:0}
+/* gentle on-screen hint when there's nothing to show yet */
+#hint{position:absolute;left:50%;top:60%;transform:translate(-50%,-50%);max-width:70vw;text-align:center;pointer-events:none;
+  font-family:'Instrument Serif',serif;font-style:italic;font-size:clamp(16px,1.7vw,24px);line-height:1.35;color:var(--clock);
+  opacity:0;transition:opacity .8s;text-shadow:0 2px 14px rgba(0,0,0,.6)}
+#hint code{font-family:'Space Mono',monospace;font-style:normal;font-size:.75em;background:rgba(0,0,0,.35);padding:2px 7px;border-radius:5px}
 body.sharpbg #bgReveal{display:none}
 #shade{position:absolute;inset:0;background:#000;opacity:var(--shade);transition:opacity 1s}
 #tint{position:absolute;inset:0;background:
@@ -106,6 +126,7 @@ body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
 <div id="stage">
   <canvas id="bgBlur" class="bg"></canvas>
   <canvas id="bgReveal" class="bg"></canvas>
+  <canvas id="bgGL"></canvas>
   <div id="shade"></div>
   <div id="tint"></div>
   <canvas id="glitch"></canvas>
@@ -114,6 +135,8 @@ body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
   <canvas id="vis"></canvas>
   <div id="clock"><div id="date"></div><div id="time"></div></div>
   <div id="word"></div>
+  <div id="hint"></div>
+  <div id="lightbar"><i></i><b></b></div>
 </div>
 
 <div id="ui">
@@ -137,11 +160,12 @@ body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
     </div>
 
     <div class="pane" data-pane="listen">
-      <p>Works with any app (Spotify, Apple Music, Amazon Music…). It listens to your device's audio, recognizes the song and where you are in it, then re-checks every few seconds to catch skips. Needs a free <a href="https://dashboard.audd.io" target="_blank" style="color:var(--accent)">AudD</a> API token.</p>
+      <p>Recognizes the song from its sound, then re-checks every few seconds to catch skips. <b>Mac audio</b> listens to Spotify / Music directly through the helper (no microphone). Needs a free <a href="https://dashboard.audd.io" target="_blank" style="color:var(--accent)">AudD</a> API token.</p>
       <input id="auddToken" type="password" placeholder="AudD API token" autocomplete="off">
       <div class="row">
-        <button id="btnListen" style="flex:1">Share audio &amp; listen</button>
-        <button id="btnMic" title="Use the microphone instead of system/tab audio">Use mic</button>
+        <button id="btnListenMac" style="flex:1">Listen to Mac audio</button>
+        <button id="btnListen" title="Share a browser tab's audio">Tab</button>
+        <button id="btnMic" title="Use the microphone">Mic</button>
       </div>
       <div id="meter"><i></i></div>
     </div>
@@ -169,12 +193,14 @@ body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
         <button id="btnPickImg" style="flex:1">Choose image…</button>
         <label class="chk"><input type="checkbox" id="chkBlur"> Blur</label>
       </div>
-      <div class="row" style="margin-top:8px">
-        <label class="chk"><input type="checkbox" id="chkGlitch"> Glitch effect</label>
+      <div class="row" style="margin-top:8px;gap:14px">
+        <label class="chk"><input type="checkbox" id="chkLiquid"> Liquid</label>
+        <label class="chk"><input type="checkbox" id="chkLight"> Light bar</label>
+        <label class="chk"><input type="checkbox" id="chkGlitch"> Glitch</label>
       </div>
       <input type="file" id="fileImg" accept="image/*" hidden>
     </div>
-    <div id="visRow" class="row"><span style="flex:1;opacity:.75">Visualizer audio:</span><button id="btnVisMic">Use mic</button><button id="btnVisTab" title="Share a browser tab's audio (e.g. Spotify web player)">Share tab</button></div>
+    <div id="visRow" class="row"><span id="visInfo" style="flex:1;opacity:.75;line-height:1.45"></span></div>
     <div id="micRow" class="row"><span style="flex:1;opacity:.75">Audio input:</span><select id="micSel"></select></div>
     <div id="status"></div>
   </div>
@@ -207,6 +233,10 @@ const store = {
 const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
 const rand = (a,b) => a + Math.random()*(b-a);
 function setStatus(msg){ $('#status').textContent = msg || ''; }
+/** A short message shown in the middle of the screen while there are no lyrics to draw. */
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let hintMsg = '';
+function setHint(html){ if (html === hintMsg) return; hintMsg = html || ''; $('#hint').innerHTML = hintMsg; }
 
 /* =========================================================================
    Playback engine: one clock that every source feeds
@@ -331,6 +361,8 @@ const bg = {
 };
 bg.collage = store.get('bgCollage', '1') === '1';    // album art as an asymmetrical collage
 bg.glitch  = store.get('bgGlitch', '') === '1';
+bg.liquid  = store.get('bgLiquid', '1') === '1';     // flowing liquid warp (like the original video)
+bg.light   = store.get('bgLight', '1') === '1';      // light bar around the screen edges
 let albumURL = null, shownURL = null, bgImg = null, bgSeed = 1, bgSrcCanvas = null, bgToken = 0;
 const bgA = $('#bgBlur'), bgB = $('#bgReveal');
 function setArt(url){ albumURL = url; applyBackground(); }
@@ -362,6 +394,8 @@ async function applyBackground(){
   $('#staticRow').classList.toggle('on', bg.source === 'static');
   $('#albumRow').classList.toggle('on', bg.source !== 'static');
   $('#chkBlur').checked = bg.blur; $('#chkCollage').checked = bg.collage; $('#chkGlitch').checked = bg.glitch;
+  $('#chkLiquid').checked = bg.liquid; $('#chkLight').checked = bg.light;
+  document.body.classList.toggle('nolightbar', !bg.light);
   if (!url) return;
   if (url !== shownURL){
     const img = await loadImg(url);
@@ -389,6 +423,7 @@ function renderBackground(){
   }
   bgSrcCanvas = main;
   analyzeCanvas(main, !sharp);
+  liquidUpload(main, sharp);
 }
 let bgResizeT; addEventListener('resize', () => { clearTimeout(bgResizeT); bgResizeT = setTimeout(renderBackground, 200); });
 
@@ -448,6 +483,128 @@ function drawCollage(g, w, h, img, seed){
     g.strokeRect(-t.tw/2, -t.th/2, t.tw, t.th);
     g.restore();
   }
+}
+
+/* ---------- WebGL renderer: liquid warp + blur + drifting sharp spots, in one pass ----------
+   Falls back to the two CSS-filtered canvases when WebGL2 isn't available. */
+const LQ = { gl:null, prog:null, tex:null, u:{}, ok:false, sharp:false };
+function initLiquid(){
+  const glc = $('#bgGL');
+  const gl = glc.getContext('webgl2', { antialias:false, premultipliedAlpha:false, alpha:false });
+  if (!gl) return;
+  const vsrc = `#version 300 es
+in vec2 p; out vec2 uv;
+void main(){ uv = p*.5 + .5; gl_Position = vec4(p, 0., 1.); }`;
+  const fsrc = `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 outColor;
+uniform sampler2D tex;
+uniform float t, aspect, overscan, blurred, collage, liquid, bass;
+uniform vec4 spots[3];
+float h21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3. - 2.*f);
+  return mix(mix(h21(i), h21(i + vec2(1,0)), u.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), u.x), u.y); }
+float fbm(vec2 p){ float v = 0., a = .5; for (int i = 0; i < 4; i++){ v += a*vnoise(p); p = p*2.03 + vec2(1.7, 9.2); a *= .5; } return v; }
+vec3 sat(vec3 c, float s){ float l = dot(c, vec3(.2126, .7152, .0722)); return mix(vec3(l), c, s); }
+vec3 blurAt(vec2 e, float lod){
+  vec2 px = exp2(lod) / vec2(textureSize(tex, 0));
+  vec3 a = vec3(0.); float w = 0.;
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++){
+    float k = (i == 0 && j == 0) ? 4. : ((i == 0 || j == 0) ? 2. : 1.);
+    a += k * textureLod(tex, e + vec2(float(i), float(j)) * px * 1.5, lod).rgb; w += k;
+  }
+  return a / w;
+}
+void main(){
+  vec2 s = vec2(uv.x, 1. - uv.y);
+  vec2 e = (s + overscan) / (1. + 2.*overscan);
+  if (liquid > 0.){
+    // slow domain-warped flow: the image drifts like ink in water; a touch stronger in loud parts
+    vec2 q = vec2(e.x*aspect, e.y) * 1.7;
+    vec2 w1 = vec2(fbm(q + vec2(0., t*.07)), fbm(q + vec2(5.2, -t*.06)));
+    vec2 w2 = vec2(fbm(q + 2.6*w1 + vec2(1.7, 9.2) + t*.05), fbm(q + 2.6*w1 + vec2(8.3, 2.8) - t*.04));
+    e += (w2 - .5) * liquid * (.06 + bass*.03);
+  }
+  vec3 col;
+  if (blurred > .5){
+    float z = collage > .5 ? 1.04 : 1.15;
+    vec3 base = sat(blurAt((e - .5)/z + .5, collage > .5 ? 3.4 : 5.0), collage > .5 ? 1.35 : 1.4) * .5;
+    vec3 sharp = sat(textureLod(tex, e, .8).rgb, 1.2) * .85;
+    vec2 p = vec2(e.x*aspect, e.y);
+    float m = 0.;
+    for (int i = 0; i < 3; i++){
+      vec4 sp = spots[i];
+      float f = length(p - sp.xy) / sp.z;
+      float a = f < .55 ? mix(1., .55, f/.55) : mix(.55, 0., clamp((f - .55)/.45, 0., 1.));
+      m = 1. - (1. - m) * (1. - a*sp.w);
+    }
+    col = mix(base, sharp, m);
+  } else {
+    col = textureLod(tex, e, 0.).rgb;
+  }
+  outColor = vec4(col, 1.);
+}`;
+  const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o);
+    if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+  try{
+    const prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, vsrc)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fsrc));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const tex = gl.createTexture();
+    for (const n of ['tex','t','aspect','overscan','blurred','collage','liquid','bass','spots']) LQ.u[n] = gl.getUniformLocation(prog, n === 'spots' ? 'spots[0]' : n);
+    Object.assign(LQ, { gl, prog, tex });
+  }catch(e){ console.warn('liquid renderer unavailable:', e); }
+}
+function liquidUpload(canvas, sharp){
+  const gl = LQ.gl;
+  if (!gl){ document.body.classList.remove('gl'); return; }
+  try{
+    gl.bindTexture(gl.TEXTURE_2D, LQ.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+    LQ.ok = true; LQ.sharp = sharp;
+  }catch(e){ LQ.ok = false; console.warn('liquid upload failed (image not readable?)', e); }
+  document.body.classList.toggle('gl', LQ.ok);
+}
+let liqAmt = 0;
+function drawLiquid(now){
+  if (!LQ.ok) return;
+  const gl = LQ.gl, glc = gl.canvas;
+  const k = LQ.sharp ? Math.min(DPR, 2) : Math.min(DPR, 1.25);
+  const w = Math.round(W*k), h = Math.round(H*k);
+  if (glc.width !== w || glc.height !== h){ glc.width = w; glc.height = h; }
+  gl.viewport(0, 0, w, h);
+  liqAmt += ((bg.liquid ? 1 : 0) - liqAmt) * 0.05;           // fade the effect in/out smoothly
+  const blurred = !LQ.sharp, A = W / H;
+  gl.uniform1i(LQ.u.tex, 0);
+  gl.uniform1f(LQ.u.t, now / 1000);
+  gl.uniform1f(LQ.u.aspect, A);
+  gl.uniform1f(LQ.u.overscan, blurred ? 0.08 : 0);
+  gl.uniform1f(LQ.u.blurred, blurred ? 1 : 0);
+  gl.uniform1f(LQ.u.collage, document.body.classList.contains('collage') ? 1 : 0);
+  gl.uniform1f(LQ.u.liquid, liqAmt < 0.01 ? 0 : liqAmt);
+  gl.uniform1f(LQ.u.bass, beat.live ? beat.loud : 0);
+  // same drifting spots as the CSS version; radius = r% of the distance to the farthest corner
+  const t = now / 1000, sp = new Float32Array(12);
+  SPOTS.forEach((o, i) => {
+    const x = (o.cx + o.ax*Math.sin(t*o.fx + o.px) + o.bx*Math.sin(t*o.gx)) / 100;
+    const y = (o.cy + o.ay*Math.cos(t*o.fy + o.py) + o.by*Math.sin(t*o.gy)) / 100;
+    const r = (o.r + o.rv*Math.sin(t*o.fr + o.px)) / 100;
+    const far = Math.max(Math.hypot(x*A, y), Math.hypot((1-x)*A, y), Math.hypot(x*A, 1-y), Math.hypot((1-x)*A, 1-y));
+    sp.set([x*A, y, r*far, o.core], i*4);
+  });
+  gl.uniform4fv(LQ.u.spots, sp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, LQ.tex);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
 /* ---------- color helpers ---------- */
@@ -561,6 +718,8 @@ $('#btnPickImg').onclick = () => $('#fileImg').click();
 $('#chkBlur').onchange = e => { bg.blur = e.target.checked; store.set('bgBlur', bg.blur ? '1' : ''); applyBackground(); };
 $('#chkCollage').onchange = e => { bg.collage = e.target.checked; store.set('bgCollage', bg.collage ? '1' : ''); applyBackground(); };
 $('#btnShuffle').onclick = () => { bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; renderBackground(); };
+$('#chkLiquid').onchange = e => { bg.liquid = e.target.checked; store.set('bgLiquid', bg.liquid ? '1' : ''); };
+$('#chkLight').onchange = e => { bg.light = e.target.checked; store.set('bgLight', bg.light ? '1' : ''); document.body.classList.toggle('nolightbar', !bg.light); };
 $('#chkGlitch').onchange = e => { bg.glitch = e.target.checked; store.set('bgGlitch', bg.glitch ? '1' : ''); if (!bg.glitch){ gctx.clearRect(0,0,gcv.width,gcv.height); document.body.classList.remove('glitching'); } };
 $('#fileImg').onchange = e => { const f = e.target.files?.[0]; if (f) useImageFile(f); e.target.value = ''; };
 function useImageFile(file){
@@ -601,6 +760,7 @@ const SPOTS = [
   { ax:34, fx:0.044, px:2,   bx:9,  gx:0.19, ay:28, fy:0.061, py:1,   by:0, gy:0,    cx:50, cy:55, r:24, rv:7, fr:0.09, core:.8  },  // softer accent
 ];
 function animateMask(now){
+  if (LQ.ok) return;                 // the WebGL renderer draws the spots itself
   if (now - lastMask < 33) return;   // ~30fps is plenty for a slow drift
   lastMask = now;
   const t = now / 1000;
@@ -625,7 +785,7 @@ const gl = { until: 0, amt: 0, next: 0, cool: 0, dropCool: 0, dropArmed: true, l
 function startBurst(now, amt, dur){
   if (now < gl.until && amt < gl.amt) return;
   gl.amt = amt;
-  gl.until = now + (dur || 50 + amt*330);
+  gl.until = now + (dur || 50 + amt*200);
 }
 function drawGlitch(now){
   if (!bg.glitch) return;
@@ -645,10 +805,10 @@ function drawGlitch(now){
     const sectionUp = beat.loud > 0.72 && beat.loud - gl.secLow > 0.45;   // the whole section has climbed
     if (beat.loud < 0.45) gl.dropArmed = true;                        // re-arm only after things calm down again
     if (gl.dropArmed && (beat.bigHit || sectionUp) && now > gl.dropCool){
-      startBurst(now, 1, 700); gl.dropCool = now + 4000; gl.dropArmed = false;
+      startBurst(now, 0.8, 450); gl.dropCool = now + 4000; gl.dropArmed = false;
     }
     // constant crackle while the loudest part lasts
-    gl.ambient = clamp((beat.loud - 0.6) * 1.4, 0, 0.55);
+    gl.ambient = clamp((beat.loud - 0.6) * 0.8, 0, 0.3);
   } else {
     // no audio to follow: gentle random bursts so the effect is still visible
     if (now > gl.next){ startBurst(now, rand(0.2, 0.55)); gl.next = now + rand(1200, 3800); }
@@ -656,26 +816,26 @@ function drawGlitch(now){
   }
 
   const burst = now < gl.until, amt = burst ? gl.amt : 0;
-  document.body.classList.toggle('glitching', burst && amt > 0.3);
+  document.body.classList.toggle('glitching', burst && amt > 0.45);
   if (now - gl.lastDraw < 45) return;            // re-randomize ~20×/s for a choppy flicker
   gl.lastDraw = now;
   gctx.clearRect(0, 0, gw, gh);
   if (!burst){
     const chance = 0.18 + gl.ambient;            // leftovers between bursts, more during loud sections
-    if (Math.random() < chance) drawBlocks(gw, gh, 1 + Math.round(gl.ambient*6 + Math.random()*2), 0.3 + gl.ambient*0.5);
+    if (Math.random() < chance) drawBlocks(gw, gh, 1 + Math.round(gl.ambient*3 + Math.random()), 0.25 + gl.ambient*0.4);
     return;
   }
-  document.documentElement.style.setProperty('--gx', `${(rand(-1, 1) * (1.5 + amt*9)).toFixed(1)}px`);
-  // torn scanlines: more, thicker and shoved further the harder the bass hits
+  document.documentElement.style.setProperty('--gx', `${(rand(-1, 1) * (1 + amt*3.5)).toFixed(1)}px`);
+  // torn scanlines: a few more, slightly thicker and shoved a bit further the harder the bass hits (never full-screen)
   if (bgSrcCanvas){
     const sw = bgSrcCanvas.width, sh = bgSrcCanvas.height, sharp = document.body.classList.contains('sharpbg');
-    const n = Math.round(1 + amt*12 + Math.random()*3);
+    const n = Math.round(amt*6 + Math.random()*2);
     for (let i=0;i<n;i++){
-      const y = Math.random()*gh, hh = 1 + Math.random()*gh*(0.01 + amt*0.045), shift = rand(-1, 1)*gw*(0.03 + amt*0.17);
-      const x0 = Math.random()*gw*0.6, xw = gw*rand(0.15, 0.35 + amt*0.5);
+      const y = Math.random()*gh, hh = 1 + Math.random()*gh*(0.006 + amt*0.018), shift = rand(-1, 1)*gw*(0.015 + amt*0.06);
+      const x0 = Math.random()*gw*0.7, xw = gw*rand(0.08, 0.2 + amt*0.22);
       const fx = sharp ? x0/gw : (x0/gw + 0.08)/1.16, fw = sharp ? xw/gw : xw/gw/1.16;
       const fy = sharp ? y/gh : (y/gh + 0.08)/1.16, fh = sharp ? hh/gh : hh/gh/1.16;
-      gctx.globalAlpha = rand(0.55, 0.9);
+      gctx.globalAlpha = rand(0.35, 0.65);
       gctx.drawImage(bgSrcCanvas, fx*sw, fy*sh, fw*sw, fh*sh, x0 + shift, y, xw, hh);
       gctx.globalCompositeOperation = 'screen';
       gctx.fillStyle = Math.random() < 0.5 ? 'rgba(255,0,80,.35)' : 'rgba(0,220,255,.35)';
@@ -684,7 +844,7 @@ function drawGlitch(now){
     }
     gctx.globalAlpha = 1;
   }
-  drawBlocks(gw, gh, Math.round(3 + amt*32 + Math.random()*4), 0.6 + amt*0.4);
+  drawBlocks(gw, gh, Math.round(2 + amt*12 + Math.random()*2), 0.45 + amt*0.3);
 }
 /** Neon pixel blocks: short rainbow-segmented bars, mostly in the song's hue, its complement and pure RGB. */
 function drawBlocks(gw, gh, n, alpha){
@@ -942,48 +1102,50 @@ async function listMics(){
 }
 $('#micSel').onchange = e => {
   store.set('micId', e.target.value);
-  if (vis.src === 'mic') connectVisAudio(true);
-  if (listen.running && listen.src === 'mic') startListening(true);
+  if (listen.running && listen.src === 'mic') startListening('mic');
 };
+store.del('visSrc');                                   // older versions remembered the mic for the visualizer
 navigator.mediaDevices?.addEventListener?.('devicechange', listMics);
 
-async function connectVisAudio(useMic, quiet=false){
-  let stream;
-  try{
-    if (useMic) stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
-    else {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }, systemAudio:'include' });
-      stream.getVideoTracks().forEach(t => t.stop());
-      if (!stream.getAudioTracks().length){ setStatus('No audio came through. In the share dialog pick a browser tab and turn on its audio switch — or use the mic.'); return; }
-    }
-  }catch{ if (!quiet) setStatus(useMic ? 'Microphone access was blocked. Allow it in the browser’s site settings.' : 'Sharing was cancelled.'); return; }
-  vis.stream?.getTracks().forEach(t => t.stop()); vis.ac?.close?.();
-  vis.stream = new MediaStream(stream.getAudioTracks());
-  vis.ac = new (window.AudioContext || window.webkitAudioContext)();
-  vis.ac.resume?.();
-  vis.analyser = vis.ac.createAnalyser(); vis.analyser.fftSize = 2048; vis.analyser.smoothingTimeConstant = 0.45;
-  vis.analyser.minDecibels = -95; vis.analyser.maxDecibels = -25;
-  vis.ac.createMediaStreamSource(vis.stream).connect(vis.analyser);
-  vis.src = useMic ? 'mic' : 'tab';
-  store.set('visSrc', vis.src);                                 // remember: reconnect the mic automatically next time
-  vis.stream.getAudioTracks()[0].addEventListener('ended', () => { vis.analyser = null; vis.src = null; updateVisRow(); });
-  if (!quiet) setStatus(useMic ? 'Visualizer is listening through the microphone.' : 'Visualizer connected to the shared tab.');
-  if (useMic) listMics();
+/* ---------- the music's own audio, from the Mac helper's ScreenCaptureKit tap ----------
+   Only Spotify / Apple Music sound is captured; the room microphone is never used for visuals. */
+const sys = { es:null, buf:new Uint8Array(512), at:0, info:null };
+const sysAnalyser = {                        // looks like an AnalyserNode to the visualizer + beat tracker
+  frequencyBinCount: 512, context: { sampleRate: 24000 }, minDecibels: -95, maxDecibels: -25,
+  getByteFrequencyData(out){ if (performance.now() - sys.at > 400) out.fill(0); else out.set(sys.buf.subarray(0, out.length)); },
+};
+const sysHearing = () => performance.now() - sys.at < 400;
+function startSysAudio(){
+  if (sys.es || !helperUp) return;
+  const es = new EventSource('levels');
+  es.onmessage = e => {
+    if (e.data === '-'){ sys.at = 0; return; }
+    const b = atob(e.data), n = Math.min(b.length, 512);
+    for (let i=0;i<n;i++) sys.buf[i] = b.charCodeAt(i);
+    sys.at = performance.now();
+  };
+  sys.es = es;
+  pollAudioInfo();
+}
+async function pollAudioInfo(){
+  try{ sys.info = await (await fetch('audio', { cache:'no-store' })).json(); }catch{ sys.info = null; }
   updateVisRow();
+  setTimeout(pollAudioInfo, 3000);
 }
-/** If the mic was used before and permission is already granted, reconnect without asking. */
-async function autoVisMic(){
-  if (store.get('visSrc') !== 'mic' || vis.analyser || (mode !== 'mac' && mode !== 'spotify')) return;
-  try{ const p = await navigator.permissions.query({ name:'microphone' }); if (p.state !== 'granted') return; }catch{ return; }
-  connectVisAudio(true, true);
+function currentAnalyser(){
+  if (helperUp && sys.es && sys.info?.available !== false) return sysAnalyser;     // the music itself
+  if (mode === 'listen' && listen.src === 'share' && listen.analyser) return listen.analyser;   // a shared tab is fine too
+  return null;                                                                     // never the room mic
 }
-function currentAnalyser(){ return (mode === 'listen' && listen.analyser) || vis.analyser; }
 function updateVisRow(){
-  const need = !document.body.classList.contains('novis') && !currentAnalyser() && (mode === 'spotify' || mode === 'mac');
-  $('#visRow').classList.toggle('on', need);
+  let msg = '';
+  if (!helperUp) msg = 'The visualizer and beat-synced glitch need the Mac helper: run <code>python3 capstellation.py</code>.';
+  else if (sys.info?.error) msg = 'Music audio: ' + esc(sys.info.error);
+  else if (sys.info && sys.info.status !== 'running') msg = 'Music audio: starting…';
+  else if (!sysHearing()) msg = 'Music audio: connected, waiting for Spotify or Music to play.';
+  $('#visInfo').innerHTML = msg;
+  $('#visRow').classList.toggle('on', !!msg);
 }
-$('#btnVisTab').onclick = () => connectVisAudio(false);
-$('#btnVisMic').onclick = () => connectVisAudio(true);
 function toggleVis(){ document.body.classList.toggle('novis'); store.set('novis', document.body.classList.contains('novis') ? '1' : ''); updateVisRow(); }
 $('#btnVis').onclick = toggleVis;
 if (store.get('novis')) document.body.classList.add('novis');
@@ -1086,6 +1248,7 @@ function tickClock(){
 }
 setInterval(tickClock, 1000); tickClock();
 
+let lbBoost = 0, lbShown = -1, hintShown = null;
 function frame(now){
   const p = pos();
   updateLines(p);
@@ -1093,6 +1256,13 @@ function frame(now){
   animateMask(now);
   drawVis(now);
   drawGlitch(now);
+  drawLiquid(now);
+  // light bar breathes with the kick drum
+  lbBoost = beat.live && beat.kick ? Math.max(lbBoost, 0.4 + beat.loud*0.6) : lbBoost * 0.93;
+  if (Math.abs(lbBoost - lbShown) > 0.01){ lbShown = lbBoost; document.documentElement.style.setProperty('--lbBoost', lbBoost.toFixed(2)); }
+  // the centre hint only shows while there are no constellations
+  const showHint = hintMsg && !sky.some(c => !c.dying);
+  if (showHint !== hintShown){ hintShown = showHint; $('#hint').style.opacity = showHint ? 0.8 : 0; }
   requestAnimationFrame(frame);
 }
 
@@ -1115,18 +1285,25 @@ function placeholderCover(){
 /* =========================================================================
    Lyrics + artwork lookup (LRCLIB, iTunes)
    ========================================================================= */
+/** Album art through the helper, so it always loads and its colors can be read (no CORS issues). */
+const viaHelper = u => (helperUp && /^https:\/\//.test(u || '')) ? 'img?u=' + encodeURIComponent(u) : u;
 async function fetchLyrics({ title, artist, album, durationMs }){
   const q = new URLSearchParams({ track_name: title, artist_name: artist });
   if (album) q.set('album_name', album);
   if (durationMs) q.set('duration', Math.round(durationMs/1000));
-  let rec = null;
-  try{ const r = await fetch('https://lrclib.net/api/get?' + q); if (r.ok) rec = await r.json(); }catch{}
-  if (!rec || (!rec.syncedLyrics && !rec.plainLyrics)){
-    try{
-      const r = await fetch('https://lrclib.net/api/search?' + new URLSearchParams({ track_name: title, artist_name: artist }));
-      const list = r.ok ? await r.json() : [];
-      rec = list.find(x => x.syncedLyrics) || list[0] || null;
-    }catch{}
+  let rec, asked = false;
+  if (helperUp){
+    try{ const j = await (await fetch('lyrics?' + q, { cache:'no-store' })).json(); if (j.ok){ rec = j.rec; asked = true; } else console.warn('helper lyrics:', j.error); }catch{}
+  }
+  if (!asked){
+    try{ const r = await fetch('https://lrclib.net/api/get?' + q); if (r.ok) rec = await r.json(); }catch{}
+    if (!rec || (!rec.syncedLyrics && !rec.plainLyrics && !rec.instrumental)){
+      try{
+        const r = await fetch('https://lrclib.net/api/search?' + new URLSearchParams({ track_name: title, artist_name: artist }));
+        const list = r.ok ? await r.json() : [];
+        rec = list.find(x => x.syncedLyrics) || list[0] || null;
+      }catch{ return { lines: [], synced: false, failed: true }; }
+    }
   }
   if (!rec) return { lines: [], synced: false };
   if (rec.instrumental) return { lines: [], synced: true, instrumental: true };
@@ -1135,6 +1312,9 @@ async function fetchLyrics({ title, artist, album, durationMs }){
   return { lines: [], synced: false };
 }
 async function fetchArt(title, artist){
+  if (helperUp){
+    try{ const j = await (await fetch('art?' + new URLSearchParams({ term: `${artist} ${title}` }))).json(); if (j.ok) return j.url; }catch{}
+  }
   try{
     const r = await fetch('https://itunes.apple.com/search?' + new URLSearchParams({ term: `${artist} ${title}`, entity:'song', limit:'1' }));
     const j = await r.json();
@@ -1148,12 +1328,17 @@ async function openSong({ key, title, artist, album, durationMs, art, posMs=0, p
   const my = ++loadToken;
   engine.trackKey = key;     // claim it so pollers don't re-trigger while loading
   setStatus(`Finding lyrics for “${title}”…`);
+  setHint('Looking up lyrics…');
   const [lyr, itunesArt] = await Promise.all([ fetchLyrics({ title, artist, album, durationMs }), art ? null : fetchArt(title, artist) ]);
   if (my !== loadToken) return;
   const elapsed = perfAt ? performance.now() - perfAt : 0;
-  loadTrack({ key, title, artist, lines: lyr.lines, duration: durationMs, art: art || itunesArt || albumURL, startAt: posMs + (playing ? elapsed : 0), playing });
-  setStatus(lyr.instrumental ? 'Instrumental — no lyrics.' : !lyr.lines.length ? 'No lyrics found for this song.' :
+  loadTrack({ key, title, artist, lines: lyr.lines, duration: durationMs, art: viaHelper(art || itunesArt) || albumURL, startAt: posMs + (playing ? elapsed : 0), playing });
+  setStatus(lyr.instrumental ? 'Instrumental — no lyrics.' : lyr.failed ? 'Couldn’t reach the lyrics service (lrclib.net).' :
+            !lyr.lines.length ? 'No lyrics found for this song.' :
             lyr.synced ? `${title} — ${artist}` : 'Only unsynced lyrics found; timing is estimated.');
+  const t = esc(title);
+  setHint(lyr.instrumental ? `“${t}” is instrumental` : lyr.failed ? 'Couldn’t reach the lyrics service (lrclib.net)' :
+          !lyr.lines.length ? `No synced lyrics found for “${t}”` : '');
 }
 
 /* =========================================================================
@@ -1168,9 +1353,10 @@ async function macPoll(){
     const rtt = performance.now() - t0;
     if (!r.ok) throw new Error('no helper');
     const j = await r.json();
-    if (!j.ok){ setStatus(j.error || 'The Mac helper reported an error.'); }
+    if (!j.ok){ setStatus(j.error || 'The Mac helper reported an error.'); setHint(esc(j.error || 'The Mac helper reported an error.')); }
     else if (j.state === 'none'){
       if (macWasOk !== 'idle') setStatus('Connected. Play something in Spotify or Apple Music.');
+      setHint('Play something in Spotify or Apple Music');
       macWasOk = 'idle';
       if (engine.playing) setPlayback(rawPos(), false);
     } else {
@@ -1188,6 +1374,7 @@ async function macPoll(){
     }
   }catch{
     setStatus('Mac helper isn’t running. In Terminal, in the capstellation folder: python3 capstellation.py, then open the link it prints.');
+    setHint('Start the Mac helper in Terminal:<br><code>python3 capstellation.py</code><br>then open the link it prints');
     macWasOk = false;
   }
   macTimer = setTimeout(macPoll, MAC_POLL_MS);
@@ -1264,10 +1451,18 @@ $('#auddToken').value = store.get('audd', '');
 $('#auddToken').addEventListener('keydown', e => e.stopPropagation());
 $('#spClient').addEventListener('keydown', e => e.stopPropagation());
 let listen = { stream:null, analyser:null, running:false, silentSince:0, loud:false, timer:null, busy:false, src:null, matched:false };
-async function startListening(useMic){
+async function startListening(src){
   const token = $('#auddToken').value.trim(); if (!token){ setStatus('Paste your AudD API token first.'); return; }
   store.set('audd', token);
   stopListening();
+  if (src === 'helper'){                                // the Mac's own Spotify/Music audio, no mic
+    if (!helperUp){ setStatus('“Mac audio” needs the helper: run python3 capstellation.py and open the link it prints.'); return; }
+    Object.assign(listen, { running:true, src:'helper', matched:false, analyser:null, silentSince:0, loud:false });
+    setStatus('Listening to Spotify / Music… identifying the song.'); setHint('Listening…');
+    levelLoop(); recognizeLoop();
+    return;
+  }
+  const useMic = src === 'mic';
   let stream;
   try{
     if (useMic){
@@ -1280,10 +1475,10 @@ async function startListening(useMic){
   }catch(e){ setStatus('Audio capture was blocked or cancelled. ' + (useMic ? '' : 'Try “Use mic”.')); return; }
   listen.stream = new MediaStream(stream.getAudioTracks());
   const ac = new (window.AudioContext || window.webkitAudioContext)();
-  const src = ac.createMediaStreamSource(listen.stream);
+  const node = ac.createMediaStreamSource(listen.stream);
   listen.analyser = ac.createAnalyser(); listen.analyser.fftSize = 2048; listen.analyser.smoothingTimeConstant = 0.45;
-  listen.analyser.minDecibels = -95; listen.analyser.maxDecibels = -25; src.connect(listen.analyser);
-  listen.ac = ac; listen.running = true; listen.src = useMic ? 'mic' : 'share'; listen.matched = false;
+  listen.analyser.minDecibels = -95; listen.analyser.maxDecibels = -25; node.connect(listen.analyser);
+  listen.ac = ac; listen.running = true; listen.src = src; listen.matched = false;
   if (useMic) listMics();
   listen.stream.getAudioTracks()[0].addEventListener('ended', () => { stopListening(); setStatus('Audio sharing stopped.'); });
   setStatus('Listening… identifying the song.'); updateVisRow();
@@ -1291,7 +1486,7 @@ async function startListening(useMic){
   recognizeLoop();
 }
 function stopListening(){
-  listen.running = false; clearTimeout(listen.timer);
+  listen.running = false; clearTimeout(listen.timer); listen.analyser = null;
   listen.stream?.getTracks().forEach(t => t.stop());
   listen.ac?.close?.();
   listen.stream = null;
@@ -1299,10 +1494,16 @@ function stopListening(){
 /** Watch loudness: silence = paused (freeze the clock); sound coming back = re-check right away (often a skip). */
 function levelLoop(){
   if (!listen.running) return;
-  const buf = new Float32Array(listen.analyser.fftSize);
-  listen.analyser.getFloatTimeDomainData(buf);
-  let s = 0; for (const v of buf) s += v*v;
-  const rms = Math.sqrt(s / buf.length);
+  let rms;
+  if (listen.src === 'helper'){                         // loudness of the music itself
+    let s = 0; if (sysHearing()) for (let i=0;i<64;i++) s += sys.buf[i];
+    rms = s / 64 / 255 * 0.03;
+  } else {
+    const buf = new Float32Array(listen.analyser.fftSize);
+    listen.analyser.getFloatTimeDomainData(buf);
+    let s = 0; for (const v of buf) s += v*v;
+    rms = Math.sqrt(s / buf.length);
+  }
   $('#meter i').style.width = clamp(rms*400, 0, 100) + '%';
   // A mic always hears room noise and music through speakers comes in quiet, so loudness can't
   // tell "paused" from "quiet passage" — with the mic, leave pause/skip detection to recognition.
@@ -1334,9 +1535,7 @@ function recordClip(ms){
 }
 // AudD gives whole seconds (rounded down), so add half a second to land in the middle of the error
 /** Send to AudD through the Mac helper when it's running (no browser CORS issues), else directly. */
-let helperUp = null;
 async function auddRequest(fd){
-  if (helperUp === null){ try{ helperUp = (await fetch('now', { cache:'no-store' })).ok; }catch{ helperUp = false; } }
   try{
     return await (await fetch(helperUp ? 'audd' : 'https://api.audd.io/', { method:'POST', body:fd })).json();
   }catch(e){
@@ -1349,15 +1548,26 @@ async function recognizeLoop(){
   if (!listen.running) return;
   listen.busy = true;
   try{
-    const { blob, startPerf } = await recordClip(LISTEN_CLIP_MS);
+    let j, startPerf;
+    if (listen.src === 'helper'){
+      // the helper keeps the last ~20 s of Spotify/Music audio, so the clip is ready right away
+      const t0 = performance.now();
+      j = await (await fetch('recognize', { method:'POST', headers:{ 'Content-Type':'application/json' },
+                  body: JSON.stringify({ token: store.get('audd'), seconds: LISTEN_CLIP_MS/1000 }) })).json();
+      const rtt = performance.now() - t0;
+      startPerf = performance.now() - (j.clip_start_ago_ms || 0) - rtt/2;
+    } else {
+      const rec = await recordClip(LISTEN_CLIP_MS);
+      startPerf = rec.startPerf;
+      const fd = new FormData();
+      fd.append('api_token', store.get('audd'));
+      fd.append('file', rec.blob, 'clip.' + (rec.blob.type.includes('mp4') ? 'm4a' : 'webm'));
+      fd.append('return', 'apple_music,spotify');
+      j = await auddRequest(fd);
+    }
     if (!listen.running) return;
-    const fd = new FormData();
-    fd.append('api_token', store.get('audd'));
-    fd.append('file', blob, 'clip.' + (blob.type.includes('mp4') ? 'm4a' : 'webm'));
-    fd.append('return', 'apple_music,spotify');
-    const j = await auddRequest(fd);
     if (j.status === 'error'){ setStatus('AudD: ' + (j.error?.error_message || 'error')); }
-    else if (!j.result){ setStatus(listen.matched ? 'Listening…' : 'Listening… no match yet. Turn the volume up or move closer to the speakers.'); }
+    else if (!j.result){ setStatus(listen.matched ? 'Listening…' : 'Listening… no match yet.'); if (!listen.matched) setHint('Listening… no match yet'); }
     else {
       const r = j.result;
       listen.matched = true;
@@ -1377,14 +1587,16 @@ async function recognizeLoop(){
   }catch(e){ setStatus('Recognition failed: ' + e.message); }
   listen.busy = false;
   // until the first match, try again almost right away; after that, re-check every few seconds
-  if (listen.running) listen.timer = setTimeout(recognizeLoop, listen.matched ? LISTEN_EVERY : 1200);
+  if (listen.running) listen.timer = setTimeout(recognizeLoop, listen.matched ? LISTEN_EVERY : (listen.src === 'helper' ? 3000 : 1200));
 }
-$('#btnListen').onclick = () => startListening(false);
-$('#btnMic').onclick = () => startListening(true);
+$('#btnListenMac').onclick = () => startListening('helper');
+$('#btnListen').onclick = () => startListening('share');
+$('#btnMic').onclick = () => startListening('mic');
 
 /* =========================================================================
    Modes, chrome, keyboard
    ========================================================================= */
+let helperUp = false;
 let mode = null;
 const MODES = ['mac', 'spotify', 'listen'];
 function setMode(m){
@@ -1396,16 +1608,15 @@ function setMode(m){
   mode = m; store.set('mode', m);
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === m));
-  setStatus('');
+  setStatus(''); setHint('');
   loadToken++; loadTrack({ key:null, title:'', artist:'', lines:[], duration:0 });
   if (m === 'mac'){ macWasOk = null; macPoll(); }
   if (m === 'spotify'){
     if (store.get('sp_refresh')){ setStatus('Connecting to Spotify…'); spPoll(); }
-    else setStatus('Connect your Spotify account to start.');
+    else { setStatus('Connect your Spotify account to start.'); setHint('Connect Spotify in the panel'); }
   }
   updateVisRow();
-  autoVisMic();
-  if (m === 'listen') setStatus('Tip: share the tab playing Spotify / Apple Music / Amazon Music web, or your whole screen with “Share system audio”.');
+  if (m === 'listen'){ setStatus(helperUp ? 'Press “Listen to Mac audio” to identify what Spotify / Music is playing.' : 'Share a tab or use the mic. (With the Mac helper running you can listen to Mac audio directly.)'); setHint('Press “Listen” in the panel'); }
 }
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 
@@ -1449,8 +1660,11 @@ addEventListener('keydown', e => {
 
 /* ---------- boot ---------- */
 (async () => {
+  initLiquid();
   setArt(placeholderCover());     // something warm to look at before a real cover arrives
   listMics();
+  try{ const r = await fetch('audio', { cache:'no-store' }); helperUp = r.ok && 'status' in await r.json(); }catch{ helperUp = false; }
+  startSysAudio();
   const fromSpotify = await handleSpotifyRedirect();
   setMode(fromSpotify ? 'spotify' : store.get('mode'));
   requestAnimationFrame(frame);
