@@ -18,12 +18,17 @@ Then open **http://127.0.0.1:8080** in Chrome or Edge.
 | Key | Action |
 |---|---|
 | F / double-click | Fullscreen |
-| H | Hide all UI (H or double-click to bring it back) |
+| H | Hide all UI. Click anywhere (or press H) to bring it back; moving the mouse won't |
+| V | Toggle the visualizer |
 | C | Toggle the clock |
 | [ / ] | Nudge lyric timing ±250 ms (saved) |
 | Space, ← / → | Play/pause and seek ±5 s (Demo & Search modes) |
 
 The controls and cursor also auto-hide after 3 seconds without mouse movement.
+
+## Visualizer
+
+A slim bar visualizer sits at the bottom center, colored with the complement of the album cover's main color. In **Listen** mode it uses the audio you already shared. In **Spotify** and **Search** modes, click *Share tab audio* (or *Mic*) in the panel to feed it. The demo song has no audio, so the visualizer animates on its own.
 
 ## Sources
 

@@ -23,6 +23,11 @@ html,body{margin:0;height:100%;background:#050505;overflow:hidden;color:var(--in
   animation:grain .9s steps(6) infinite}
 @keyframes grain{0%{transform:translate(0,0)}20%{transform:translate(-3%,2%)}40%{transform:translate(2%,-3%)}60%{transform:translate(-2%,-1%)}80%{transform:translate(3%,3%)}100%{transform:translate(0,0)}}
 canvas#sky{position:absolute;inset:0;width:100%;height:100%}
+canvas#vis{position:absolute;left:50%;bottom:2.2vh;transform:translateX(-50%);width:min(44vw,620px);height:clamp(36px,6vh,64px);pointer-events:none;transition:opacity .6s,bottom .5s}
+body.novis canvas#vis{opacity:0}
+body:not(.idle):not(.zen) canvas#vis{bottom:calc(2.2vh + 44px)}  /* lift above the key hints while the UI is showing */
+#visRow{display:none;margin-top:10px}
+#visRow.on{display:flex}
 #clock{position:absolute;top:5.5vh;left:0;right:0;text-align:center;pointer-events:none;transition:opacity .6s}
 #date{font-family:'Instrument Serif',serif;font-size:clamp(14px,1.5vw,22px);letter-spacing:.02em;opacity:.85;color:#ffd9c2}
 #time{font-family:'Instrument Serif',serif;font-size:clamp(72px,12vw,190px);line-height:.92;color:#ffd6bd;
@@ -86,6 +91,7 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
   <div id="tint"></div>
   <div id="grain"></div>
   <canvas id="sky"></canvas>
+  <canvas id="vis"></canvas>
   <div id="clock"><div id="date"></div><div id="time"></div></div>
   <div id="word"></div>
 </div>
@@ -93,7 +99,8 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
 <div id="ui">
   <div id="topright" class="glass">
     <button id="btnClock" title="Toggle clock (C)">Clock</button>
-    <button id="btnZen" title="Hide everything (H) — press H or double-click to bring back">Hide UI</button>
+    <button id="btnVis" title="Toggle visualizer (V)">Visualizer</button>
+    <button id="btnZen" title="Hide everything (H) — click anywhere to bring it back">Hide UI</button>
     <button id="btnFull" title="Fullscreen (F)">Fullscreen</button>
   </div>
 
@@ -139,11 +146,12 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
       <input id="scrub" type="range" min="0" max="1000" value="0">
       <span id="tpos">0:00 / 0:00</span>
     </div>
+    <div id="visRow" class="row"><span style="flex:1;opacity:.75">Visualizer needs audio:</span><button id="btnVisTab">Share tab audio</button><button id="btnVisMic">Mic</button></div>
     <div id="status"></div>
   </div>
 
   <div id="nowplaying" class="glass"><div id="npTitle"></div><div id="npArtist"></div></div>
-  <div id="hints" class="glass">F fullscreen · H hide · C clock · [ ] timing · ← → seek · Space play</div>
+  <div id="hints" class="glass">F fullscreen · H hide (click to show) · C clock · V visualizer · [ ] timing · ← → seek · Space play</div>
 </div>
 
 <script>
@@ -254,6 +262,17 @@ function setArt(url){
   $('#bgReveal').style.backgroundImage = css;
   extractAccent(url);
 }
+/** Visualizer colors: the complement of the cover's main color, spread a little either side. */
+let visColors = ['hsl(202,80%,62%)', 'hsl(172,75%,58%)', 'hsl(232,78%,66%)'];
+function setPalette(r, g, b){
+  r/=255; g/=255; b/=255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+  let h = 0;
+  if (d){ h = max===r ? ((g-b)/d) % 6 : max===g ? (b-r)/d + 2 : (r-g)/d + 4; h = (h*60 + 360) % 360; }
+  const s = clamp(d / (1 - Math.abs(max + min - 1) || 1) * 100, 55, 90);
+  const c = (h + 180) % 360;
+  visColors = [`hsl(${c},${s}%,62%)`, `hsl(${(c+330)%360},${s}%,58%)`, `hsl(${(c+30)%360},${s}%,66%)`];
+}
 function extractAccent(url){
   const img = new Image();
   img.crossOrigin = 'anonymous';
@@ -269,23 +288,29 @@ function extractAccent(url){
         const sat = max ? (max-min)/max : 0, score = sat * max;
         if (score > bestScore){ bestScore = score; best = [r,gg,b]; }
       }
-      if (best && bestScore > 60) document.documentElement.style.setProperty('--accent', `rgb(${best.join(',')})`);
+      if (best && bestScore > 60){ document.documentElement.style.setProperty('--accent', `rgb(${best.join(',')})`); setPalette(...best); }
     }catch{ /* image not CORS-readable: keep default accent */ }
   };
   img.src = url;
 }
 let lastMask = 0;
+/* Each spot drifts on its own slow Lissajous path, so they wander independently
+   and occasionally pass over each other. Add/remove entries to taste. */
+const SPOTS = [
+  { ax:32, fx:0.071, px:0,   bx:10, gx:0.23, ay:26, fy:0.053, py:0,   by:8, gy:0.17, cx:50, cy:45, r:30, rv:8, fr:0.11, core:1   },  // main spot
+  { ax:30, fx:0.058, px:3.4, bx:9,  gx:0.21, ay:24, fy:0.067, py:2.1, by:7, gy:0.13, cx:50, cy:52, r:29, rv:7, fr:0.13, core:1   },  // second spot, same strength, opposite phase
+  { ax:34, fx:0.044, px:2,   bx:9,  gx:0.19, ay:28, fy:0.061, py:1,   by:0, gy:0,    cx:50, cy:55, r:24, rv:7, fr:0.09, core:.8  },  // softer accent
+];
 function animateMask(now){
   if (now - lastMask < 33) return;   // ~30fps is plenty for a slow drift
   lastMask = now;
   const t = now / 1000;
-  const x1 = 50 + 32*Math.sin(t*0.071) + 10*Math.sin(t*0.23);
-  const y1 = 45 + 26*Math.cos(t*0.053) + 8*Math.sin(t*0.17);
-  const x2 = 50 + 34*Math.cos(t*0.044 + 2) + 9*Math.cos(t*0.19);
-  const y2 = 55 + 28*Math.sin(t*0.061 + 1);
-  const r1 = 30 + 8*Math.sin(t*0.11), r2 = 24 + 7*Math.cos(t*0.09);
-  const m = `radial-gradient(circle at ${x1}% ${y1}%, #000 0%, rgba(0,0,0,.55) ${r1*0.55}%, transparent ${r1}%),
-             radial-gradient(circle at ${x2}% ${y2}%, rgba(0,0,0,.85) 0%, rgba(0,0,0,.4) ${r2*0.5}%, transparent ${r2}%)`;
+  const m = SPOTS.map(o => {
+    const x = o.cx + o.ax*Math.sin(t*o.fx + o.px) + o.bx*Math.sin(t*o.gx);
+    const y = o.cy + o.ay*Math.cos(t*o.fy + o.py) + o.by*Math.sin(t*o.gy);
+    const r = o.r + o.rv*Math.sin(t*o.fr + o.px);
+    return `radial-gradient(circle at ${x}% ${y}%, rgba(0,0,0,${o.core}) 0%, rgba(0,0,0,${0.55*o.core}) ${r*0.55}%, transparent ${r}%)`;
+  }).join(',');
   const el = $('#bgReveal'); el.style.webkitMaskImage = m; el.style.maskImage = m;
 }
 
@@ -468,6 +493,89 @@ function drawSky(p, now){
 }
 
 /* =========================================================================
+   Visualizer: slim mirrored bars at the bottom, in the cover's complementary colors
+   ========================================================================= */
+const vcv = $('#vis'), vctx = vcv.getContext('2d');
+const VIS_BARS = 28;                                   // per side (mirrored → 56 bars)
+const vis = { analyser:null, ac:null, stream:null, levels:new Float32Array(VIS_BARS), buf:null };
+function visResize(){
+  const r = vcv.getBoundingClientRect();
+  vcv.width = Math.round(r.width*DPR); vcv.height = Math.round(r.height*DPR);
+}
+addEventListener('resize', visResize);
+async function connectVisAudio(useMic){
+  let stream;
+  try{
+    if (useMic) stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
+    else {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }, systemAudio:'include' });
+      stream.getVideoTracks().forEach(t => t.stop());
+      if (!stream.getAudioTracks().length){ setStatus('No audio was shared — pick the music tab again and turn on “Share tab audio”.'); return; }
+    }
+  }catch{ setStatus('Audio for the visualizer was blocked or cancelled.'); return; }
+  vis.stream?.getTracks().forEach(t => t.stop()); vis.ac?.close?.();
+  vis.stream = new MediaStream(stream.getAudioTracks());
+  vis.ac = new (window.AudioContext || window.webkitAudioContext)();
+  vis.analyser = vis.ac.createAnalyser(); vis.analyser.fftSize = 2048; vis.analyser.smoothingTimeConstant = 0.78;
+  vis.ac.createMediaStreamSource(vis.stream).connect(vis.analyser);
+  vis.stream.getAudioTracks()[0].addEventListener('ended', () => { vis.analyser = null; updateVisRow(); });
+  setStatus('Visualizer connected.');
+  updateVisRow();
+}
+function currentAnalyser(){ return (mode === 'listen' && listen.analyser) || vis.analyser; }
+function updateVisRow(){
+  const need = !document.body.classList.contains('novis') && !currentAnalyser() && (mode === 'spotify' || mode === 'search');
+  $('#visRow').classList.toggle('on', need);
+}
+$('#btnVisTab').onclick = () => connectVisAudio(false);
+$('#btnVisMic').onclick = () => connectVisAudio(true);
+function toggleVis(){ document.body.classList.toggle('novis'); store.set('novis', document.body.classList.contains('novis') ? '1' : ''); updateVisRow(); }
+$('#btnVis').onclick = toggleVis;
+if (store.get('novis')) document.body.classList.add('novis');
+
+function drawVis(now){
+  if (document.body.classList.contains('novis')) return;
+  if (vcv.width !== Math.round(vcv.getBoundingClientRect().width*DPR)) visResize();
+  const w = vcv.width, h = vcv.height, L = vis.levels;
+  const an = currentAnalyser();
+  const targets = new Float32Array(VIS_BARS);
+  if (an){
+    if (!vis.buf || vis.buf.length !== an.frequencyBinCount) vis.buf = new Uint8Array(an.frequencyBinCount);
+    an.getByteFrequencyData(vis.buf);
+    const nyq = (an.context.sampleRate || 48000) / 2, n = vis.buf.length;
+    for (let i=0;i<VIS_BARS;i++){                       // log-spaced bands, 45 Hz → 11 kHz
+      const f0 = 45 * Math.pow(11000/45, i/VIS_BARS), f1 = 45 * Math.pow(11000/45, (i+1)/VIS_BARS);
+      const a = Math.floor(f0/nyq*n), b = Math.max(a+1, Math.ceil(f1/nyq*n));
+      let m = 0; for (let k=a;k<b && k<n;k++) m = Math.max(m, vis.buf[k]);
+      targets[i] = Math.pow(m/255, 1.6) * (0.75 + i/VIS_BARS*0.6);   // tilt up the treble a bit
+    }
+  } else if (mode === 'demo' && engine.playing){       // the demo has no audio, so fake a gentle groove
+    const t = rawPos()/1000, beat = Math.pow(Math.max(0, Math.cos(t*Math.PI*2*1.6)), 6);
+    for (let i=0;i<VIS_BARS;i++){
+      const fall = 1 - i/VIS_BARS;
+      targets[i] = clamp(0.18 + beat*0.6*fall*fall + 0.2*Math.sin(t*3.1 + i*0.7)*Math.sin(t*1.3 + i*0.23) + Math.random()*0.08, 0.04, 1);
+    }
+  }
+  for (let i=0;i<VIS_BARS;i++){ const tg = targets[i]; L[i] += (tg - L[i]) * (tg > L[i] ? 0.55 : 0.14); }
+
+  vctx.clearRect(0,0,w,h);
+  const total = VIS_BARS*2, gap = w/total*0.38, bw = w/total - gap;
+  const grad = vctx.createLinearGradient(0,0,w,0);
+  grad.addColorStop(0, visColors[1]); grad.addColorStop(0.5, visColors[0]); grad.addColorStop(1, visColors[2]);
+  vctx.fillStyle = grad;
+  vctx.shadowColor = visColors[0]; vctx.shadowBlur = 10*DPR;
+  for (let j=0;j<total;j++){
+    const i = j < VIS_BARS ? VIS_BARS-1-j : j-VIS_BARS;   // lows in the middle, highs at the edges
+    const edgeFade = 1 - Math.pow(Math.abs(j - total/2 + 0.5)/(total/2), 2.2);
+    const bh = Math.max(bw, L[i]*h*0.94);
+    const x = j*(bw+gap) + gap/2, y = h - bh;
+    vctx.globalAlpha = 0.25 + 0.65*edgeFade;
+    vctx.beginPath(); vctx.roundRect ? vctx.roundRect(x, y, bw, bh, bw/2) : vctx.rect(x, y, bw, bh); vctx.fill();
+  }
+  vctx.globalAlpha = 1; vctx.shadowBlur = 0;
+}
+
+/* =========================================================================
    Clock + main loop
    ========================================================================= */
 function tickClock(){
@@ -484,6 +592,7 @@ function frame(now){
   updateLines(p);
   drawSky(p, now);
   animateMask(now);
+  drawVis(now);
   if (now % 250 < 17) syncTransport();
   requestAnimationFrame(frame);
 }
@@ -704,7 +813,7 @@ async function startListening(useMic){
   listen.analyser = ac.createAnalyser(); listen.analyser.fftSize = 1024; src.connect(listen.analyser);
   listen.ac = ac; listen.running = true;
   listen.stream.getAudioTracks()[0].addEventListener('ended', () => { stopListening(); setStatus('Audio sharing stopped.'); });
-  setStatus('Listening… identifying the song.');
+  setStatus('Listening… identifying the song.'); updateVisRow();
   levelLoop();
   recognizeLoop();
 }
@@ -795,6 +904,7 @@ function setMode(m){
     if (store.get('sp_refresh')){ setStatus('Connecting to Spotify…'); spPoll(); }
     else setStatus('Connect your Spotify account to start.');
   }
+  updateVisRow();
   if (m === 'listen') setStatus('Tip: share the tab playing Spotify / Apple Music / Amazon Music web, or your whole screen with “Share system audio”.');
   syncTransport();
 }
@@ -807,10 +917,16 @@ function toggleFull(){
 function toggleZen(){ document.body.classList.toggle('zen'); }
 function toggleClock(){ document.body.classList.toggle('noclock'); store.set('noclock', document.body.classList.contains('noclock') ? '1' : ''); }
 $('#btnFull').onclick = toggleFull;
-$('#btnZen').onclick = toggleZen;
+$('#btnZen').onclick = e => { e.stopPropagation(); toggleZen(); };   // don't let this click count as "click to show"
 $('#btnClock').onclick = toggleClock;
 if (store.get('noclock')) document.body.classList.add('noclock');
-addEventListener('dblclick', () => document.body.classList.contains('zen') ? toggleZen() : toggleFull());
+// When the UI is hidden (H), only a click brings it back — moving the mouse doesn't.
+let unhiddenAt = 0;
+addEventListener('click', () => {
+  if (!document.body.classList.contains('zen')) return;
+  toggleZen(); unhiddenAt = performance.now(); poke();
+});
+addEventListener('dblclick', () => { if (performance.now() - unhiddenAt > 600) toggleFull(); });
 
 let idleTimer;
 function poke(){ document.body.classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => document.body.classList.add('idle'), 3000); }
@@ -825,6 +941,7 @@ addEventListener('keydown', e => {
   if (k === 'f') toggleFull();
   else if (k === 'h') toggleZen();
   else if (k === 'c') toggleClock();
+  else if (k === 'v') toggleVis();
   else if (k === '[' || k === ']'){
     engine.offset += (k === ']' ? 250 : -250); store.set('offset', engine.offset);
     setStatus(`Timing offset: ${engine.offset > 0 ? '+' : ''}${engine.offset} ms`);
