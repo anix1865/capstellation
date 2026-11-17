@@ -95,7 +95,7 @@ jobs:
         run: |
           ls -la dist
           # release notes = the commit message, without any co-author / tool trailer lines
-          printf '%s\n' "${NOTES:-Manual build}" | grep -viE '^(co-authored-by:|claude-session:)' > notes.md || true
+          printf '%s\n' "${NOTES:-Manual build}" | grep -viE '^(co-authored-by:|[a-z-]+-session:)' > notes.md || true
           gh release create "v${APP_VERSION}" dist/* \
             --repo "${{ github.repository }}" \
             --title "Capstellation ${APP_VERSION}" \
