@@ -151,7 +151,10 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
 /* =========================================================================
    Config
    ========================================================================= */
-const MAX_CAPTIONS   = 10;     // constellations kept on screen
+const MAX_CAPTIONS   = 10;     // constellations kept visible
+const MAX_ON_SCREEN  = 15;     // hard cap, including ones still fading out
+const FADE_SPEED     = 0.10;   // how fast old constellations fade (per frame, 0–1)
+const DIE_SPEED      = 0.22;   // how fast the sky clears after a skip
 const SEEK_THRESHOLD = 2500;   // ms of disagreement that counts as a skip
 const LISTEN_CLIP_MS = 7000;   // length of audio sample sent for recognition
 const LISTEN_EVERY   = 9000;   // pause between re-checks while listening
@@ -357,6 +360,14 @@ function addConstellation(line){
   const prev = sky.filter(c=>!c.dying).slice(-1)[0];
   const link = prev ? { from: prev, idx: prev.stars.length-1 } : null;
   sky.push({ line, center, stars, edges, link, alpha: 0, born: performance.now(), dying: 0 });
+  enforceCap();
+}
+/** Never more than MAX_ON_SCREEN constellations: drop the faintest fading ones first, then the oldest. */
+function enforceCap(){
+  while (sky.length > MAX_ON_SCREEN){
+    const victim = sky.filter(c => c.dying).sort((a,b) => a.alpha - b.alpha)[0] || sky[0];
+    sky.splice(sky.indexOf(victim), 1);
+  }
 }
 
 function updateLines(p){
@@ -380,8 +391,9 @@ function drawSky(p, now){
   const live = sky.filter(c=>!c.dying);
   sky = sky.filter(c => {
     const age = live.length - 1 - live.indexOf(c);
-    let target = c.dying ? 0 : (age === 0 ? 1 : age < MAX_CAPTIONS ? 0.72 - (age-1)*0.07 : 0);
-    c.alpha += (target - c.alpha) * (c.dying ? 0.12 : 0.05);
+    let target = c.dying ? 0 : (age === 0 ? 1 : age < MAX_CAPTIONS ? 0.62 - (age-1)*0.065 : 0);
+    const rate = c.dying ? DIE_SPEED : (target < c.alpha ? FADE_SPEED : 0.06);
+    c.alpha += (target - c.alpha) * rate;
     return !(c.alpha < 0.01 && target === 0 && (c.dying || age >= MAX_CAPTIONS) && now - c.born > 400);
   });
 

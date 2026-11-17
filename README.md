@@ -47,7 +47,7 @@ Lyrics come from **lrclib.net** (free, no key). Covers come from Spotify/AudD, o
 
 All sources call one function, `setPlayback(positionMs, isPlaying)`. If the reported position differs from the predicted one by more than 2.5 s, that counts as a skip: the current constellations fade out, and the sky rebuilds from the line playing now. Word timing is spread across each line by word length, because LRC files only time whole lines.
 
-Tunables are at the top of the script: `MAX_CAPTIONS`, `SEEK_THRESHOLD`, `LISTEN_CLIP_MS`, `LISTEN_EVERY`, `SP_POLL_MS`.
+Tunables are at the top of the script: `MAX_CAPTIONS`, `MAX_ON_SCREEN`, `FADE_SPEED`, `DIE_SPEED`, `SEEK_THRESHOLD`, `LISTEN_CLIP_MS`, `LISTEN_EVERY`, `SP_POLL_MS`.
 
 ## Going native later
 
