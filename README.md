@@ -47,6 +47,8 @@ Play something in **Spotify** or **Apple Music** (on Windows, any player that sh
 - **Glitch:** thin torn scanlines and neon pixel blocks that follow the bass. Quiet verses get small flickers, loud parts get more, and a drop gets one bigger burst. It's kept restrained, so it never takes over the screen.
 - **Interludes:** when the music plays on with no words (intros, solos, outros), the sky goes to warp speed. The stars move as fast as the bass pushes them, kicks send out rings, and three dots fill in as the next line gets close.
 
+**Song changes:** the sky jumps to warp speed and one ring spreads out from the middle, carrying the new cover with it, while every color glides over to the new song's. The song name fades across and the old lyrics dissolve. (Turning off Interludes also turns off the warp here; the ring stays.)
+
 **Visualizer** (panel): **Bars** along the bottom, or **Radial**: the album cover spins slowly in the middle like a record, with the bars standing out around it. The constellations steer around it.
 
 **Open at login** (panel, desktop app only): Capstellation starts when you log in to your computer. It's on by default; untick it to turn it off.

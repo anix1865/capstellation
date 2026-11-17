@@ -68,10 +68,10 @@ body.wallpaper #clock{top:calc(var(--wpT,0px) + 4.5vh)}
 #visRow.on{display:flex}
 #clock{position:absolute;top:5.5vh;left:0;right:0;text-align:center;pointer-events:none;transition:opacity .6s}
 #date{font-family:'Montserrat',sans-serif;font-weight:500;font-size:clamp(15px,1.55vw,23px);letter-spacing:.04em;opacity:.9;color:var(--clock);margin-bottom:.3em;
-  text-shadow:0 1px 10px rgba(0,0,0,.5);transition:color 1.2s}
+  text-shadow:0 1px 10px rgba(0,0,0,.5)}
 #time{font-family:'CapClock','Saira',sans-serif;font-weight:400;font-size:clamp(64px,10vw,164px);line-height:1;letter-spacing:0;
   font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;color:var(--clock);
-  text-shadow:0 2px 24px rgba(0,0,0,.45),0 0 30px var(--clockGlow),0 0 90px var(--clockGlow);transition:color 1.2s,text-shadow 1.2s}
+  text-shadow:0 2px 24px rgba(0,0,0,.45),0 0 30px var(--clockGlow),0 0 90px var(--clockGlow);}
 body.noclock #clock{opacity:0}
 #wordPos{position:absolute;left:0;top:0;will-change:transform,opacity;opacity:0;pointer-events:none;
   transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .35s}
@@ -137,7 +137,7 @@ body.helpopen #help{display:block}
 #help kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,220,190,.25);background:rgba(255,255,255,.06);font:12px 'Space Mono',monospace}
 #helpClose{position:absolute;right:10px;top:10px;width:28px;height:28px;padding:0;border-radius:50%;font-size:16px;line-height:1}
 #nowplaying{position:absolute;right:22px;top:calc(var(--wpT,0px) + 72px);max-width:32vw;text-align:right;display:none;pointer-events:none;
-  color:var(--clock);text-shadow:0 1px 12px rgba(0,0,0,.6);transition:opacity .6s,color 1.2s}
+  color:var(--clock);text-shadow:0 1px 12px rgba(0,0,0,.6);transition:opacity .45s}
 #nowplaying.on{display:block}
 #npTitle{font-family:'Instrument Serif',serif;font-size:clamp(18px,1.6vw,26px);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #npArtist{font-family:'Montserrat',sans-serif;font-weight:500;font-size:clamp(11px,.95vw,14px);letter-spacing:.06em;opacity:.75;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -376,6 +376,20 @@ function spreadPlain(text, durationMs){
   return rows.map((text,i) => ({ t: start + i*step, text }));
 }
 
+/** Song name in the corner: fade the old one out, swap, fade the new one in. */
+let npTimer = 0;
+function setNowPlaying(title, artist){
+  const el = $('#nowplaying');
+  if ($('#npTitle').textContent === (title || '') && $('#npArtist').textContent === (artist || '')) return;
+  clearTimeout(npTimer);
+  const swap = () => {
+    $('#npTitle').textContent = title || ''; $('#npArtist').textContent = artist || '';
+    el.classList.toggle('on', !!title); el.style.opacity = '';
+  };
+  if (!el.classList.contains('on')) return swap();
+  el.style.opacity = 0;
+  npTimer = setTimeout(swap, 450);
+}
 function loadTrack({ key, title, artist, lines, duration, art, startAt=0, playing=false }){
   engine.trackKey = key;
   engine.duration = duration || (lines.length ? lines[lines.length-1].t + 6000 : 0);
@@ -383,11 +397,9 @@ function loadTrack({ key, title, artist, lines, duration, art, startAt=0, playin
   engine.lines = prepareLines(lines.filter(l => /[\p{L}\p{N}]/u.test(l.text)), engine.duration);
   engine.pastEnd = false;
   engine.posAnchor = startAt; engine.perfAnchor = performance.now(); engine.playing = playing;
-  resetSky(true);
+  resetSky();                                        // the old song's constellations dissolve
   if (typeof resetBeat === 'function') resetBeat();
-  $('#npTitle').textContent = title || '';
-  $('#npArtist').textContent = artist || '';
-  $('#nowplaying').classList.toggle('on', !!title);
+  setNowPlaying(title, artist);
   if (art) setArt(art);
 }
 
@@ -408,6 +420,8 @@ bg.liquid  = store.get('bgLiquid', '1') === '1';     // flowing liquid warp (lik
 bg.light   = store.get('bgLight', '1') === '1';
 bg.interlude = store.get('bgInterlude', '1') === '1';
 let visStyle = store.get('visStyle', 'bars');            // 'bars' along the bottom | 'radial' around a spinning cover   // warp-speed sky while there's music but no words      // light bar around the screen edges
+let bgFadeNext = false;     // the next render is a new picture: sweep it in
+let bgFadeWarp = false;     // …and it's a new song, so go to warp speed while it does
 let albumURL = null, shownURL = null, bgImg = null, bgSeed = 1, bgSrcCanvas = null, bgToken = 0;
 const bgA = $('#bgBlur'), bgB = $('#bgReveal');
 function setArt(url){ albumURL = url; applyBackground(); loadDisc(); }
@@ -446,6 +460,7 @@ async function applyBackground(){
     const img = await loadImg(url);
     if (my !== bgToken || !img) return;
     bgImg = img; shownURL = url; bgSeed = hashStr(url);
+    bgFadeNext = true; bgFadeWarp = true;
   }
   renderBackground();
 }
@@ -468,7 +483,7 @@ function renderBackground(){
   }
   bgSrcCanvas = main;
   analyzeCanvas(main, !sharp);
-  liquidUpload(main, sharp);
+  liquidUpload(main, sharp, bgFadeNext); bgFadeNext = bgFadeWarp = false;
   // wallpaper mode on macOS: ask the app to re-tint the menu bar once the new background is showing
   if (WALLPAPER){ clearTimeout(renderBackground.tintT); renderBackground.tintT = setTimeout(() => fetch('wallpaper/tint', { method:'POST' }).catch(() => {}), 2000); }
 }
@@ -545,7 +560,9 @@ void main(){ uv = p*.5 + .5; gl_Position = vec4(p, 0., 1.); }`;
   const fsrc = `#version 300 es
 precision highp float;
 in vec2 uv; out vec4 outColor;
-uniform sampler2D tex;
+uniform sampler2D tex, texPrev;
+uniform float mixT, wipeR;
+uniform vec2 wipeC;
 uniform float t, aspect, overscan, blurred, collage, liquid, bass, shade, grain, lbOn, lbAng, lbBoost;
 uniform vec2 res;
 uniform vec3 cClock, cWord;
@@ -555,14 +572,32 @@ float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3. - 2.*f);
   return mix(mix(h21(i), h21(i + vec2(1,0)), u.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), u.x), u.y); }
 float fbm(vec2 p){ float v = 0., a = .5; for (int i = 0; i < 4; i++){ v += a*vnoise(p); p = p*2.03 + vec2(1.7, 9.2); a *= .5; } return v; }
 vec3 sat(vec3 c, float s){ float l = dot(c, vec3(.2126, .7152, .0722)); return mix(vec3(l), c, s); }
-vec3 blurAt(vec2 e, float lod){
-  vec2 px = exp2(lod) / vec2(textureSize(tex, 0));
+vec3 blurAt(sampler2D tx, vec2 e, float lod){
+  vec2 px = exp2(lod) / vec2(textureSize(tx, 0));
   vec3 a = vec3(0.); float w = 0.;
   for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++){
     float k = (i == 0 && j == 0) ? 4. : ((i == 0 || j == 0) ? 2. : 1.);
-    a += k * textureLod(tex, e + vec2(float(i), float(j)) * px * 1.5, lod).rgb; w += k;
+    a += k * textureLod(tx, e + vec2(float(i), float(j)) * px * 1.5, lod).rgb; w += k;
   }
   return a / w;
+}
+/** The background picture at e: blurred base with sharp drifting spots, or the sharp image. */
+vec3 picture(sampler2D tx, vec2 e){
+  if (blurred > .5){
+    float z = collage > .5 ? 1.04 : 1.15;
+    vec3 base = sat(blurAt(tx, (e - .5)/z + .5, collage > .5 ? 3.4 : 5.0), collage > .5 ? 1.35 : 1.4) * .5;
+    vec3 sharp = sat(textureLod(tx, e, .8).rgb, 1.2) * .85;
+    vec2 p = vec2(e.x*aspect, e.y);
+    float m = 0.;
+    for (int i = 0; i < 3; i++){
+      vec4 sp = spots[i];
+      float f = length(p - sp.xy) / sp.z;
+      float a = f < .55 ? mix(1., .55, f/.55) : mix(.55, 0., clamp((f - .55)/.45, 0., 1.));
+      m = 1. - (1. - m) * (1. - a*sp.w);
+    }
+    return mix(base, sharp, m);
+  }
+  return textureLod(tx, e, 0.).rgb;
 }
 void main(){
   vec2 s = vec2(uv.x, 1. - uv.y);
@@ -574,22 +609,13 @@ void main(){
     vec2 w2 = vec2(fbm(q + 2.6*w1 + vec2(1.7, 9.2) + t*.025), fbm(q + 2.6*w1 + vec2(8.3, 2.8) - t*.02));
     e += (w2 - .5) * liquid * (.028 + bass*.012);
   }
-  vec3 col;
-  if (blurred > .5){
-    float z = collage > .5 ? 1.04 : 1.15;
-    vec3 base = sat(blurAt((e - .5)/z + .5, collage > .5 ? 3.4 : 5.0), collage > .5 ? 1.35 : 1.4) * .5;
-    vec3 sharp = sat(textureLod(tex, e, .8).rgb, 1.2) * .85;
-    vec2 p = vec2(e.x*aspect, e.y);
-    float m = 0.;
-    for (int i = 0; i < 3; i++){
-      vec4 sp = spots[i];
-      float f = length(p - sp.xy) / sp.z;
-      float a = f < .55 ? mix(1., .55, f/.55) : mix(.55, 0., clamp((f - .55)/.45, 0., 1.));
-      m = 1. - (1. - m) * (1. - a*sp.w);
-    }
-    col = mix(base, sharp, m);
-  } else {
-    col = textureLod(tex, e, 0.).rgb;
+  // new song: the old picture melts into the new one (only costs double while it's happening)
+  // the new picture spreads out from the middle behind one ring (radius wipeR, in screen heights)
+  vec3 col = picture(tex, e);
+  if (mixT < 1.){
+    float d = length((s - wipeC) * vec2(aspect, 1.));
+    float m = 1. - smoothstep(wipeR - .07, wipeR, d);
+    if (m < 1.) col = mix(picture(texPrev, e), col, m);
   }
   // shade (keeps text readable on bright covers) + vignette + top/bottom darkening — same as the CSS layers
   col *= 1. - shade;
@@ -623,15 +649,27 @@ void main(){
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    const tex = gl.createTexture();
-    for (const n of ['tex','t','aspect','overscan','blurred','collage','liquid','bass','spots','shade','grain','lbOn','lbAng','lbBoost','res','cClock','cWord']) LQ.u[n] = gl.getUniformLocation(prog, n === 'spots' ? 'spots[0]' : n);
-    Object.assign(LQ, { gl, prog, tex });
+    const tex = gl.createTexture(), texPrev = gl.createTexture();
+    for (const n of ['tex','texPrev','mixT','wipeR','wipeC','t','aspect','overscan','blurred','collage','liquid','bass','spots','shade','grain','lbOn','lbAng','lbBoost','res','cClock','cWord']) LQ.u[n] = gl.getUniformLocation(prog, n === 'spots' ? 'spots[0]' : n);
+    Object.assign(LQ, { gl, prog, tex, texPrev, mixStart: -1e9, hasTex: false });
   }catch(e){ console.warn('liquid renderer unavailable:', e); }
 }
-function liquidUpload(canvas, sharp){
+const BG_FADE_MS = 2400;        // how long the ring takes to sweep the new cover across the screen
+/** Song change transition: progress 0..1 (eased: slow out of the middle, gliding to the edges), ring radius in px. */
+const songFx = { t0:-1e9, warp:false };
+function wipeState(now){
+  const k = clamp((now - songFx.t0) / BG_FADE_MS, 0, 1);
+  const e = k < .5 ? 4*k*k*k : 1 - Math.pow(-2*k + 2, 3) / 2;
+  const cx = interlude.vx * W, cy = interlude.vy * H;
+  const far = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy));
+  return { k, e, cx, cy, r: e * (far + H*0.08) };
+}
+function liquidUpload(canvas, sharp, fade){
   const gl = LQ.gl;
   if (!gl){ document.body.classList.remove('gl'); return; }
   try{
+    // keep the old picture in the second texture and fade from it (not on resizes / setting tweaks)
+    if (fade && LQ.hasTex){ [LQ.tex, LQ.texPrev] = [LQ.texPrev, LQ.tex]; LQ.mixStart = songFx.t0 = performance.now(); songFx.warp = bgFadeWarp; }
     gl.bindTexture(gl.TEXTURE_2D, LQ.tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -639,7 +677,7 @@ function liquidUpload(canvas, sharp){
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
-    LQ.ok = true; LQ.sharp = sharp;
+    LQ.ok = true; LQ.sharp = sharp; LQ.hasTex = true;
   }catch(e){ LQ.ok = false; console.warn('liquid upload failed (image not readable?)', e); }
   document.body.classList.toggle('gl', LQ.ok);
 }
@@ -679,6 +717,12 @@ function drawLiquid(now){
     sp.set([x*A, y, r*far, o.core], i*4);
   });
   gl.uniform4fv(LQ.u.spots, sp);
+  const ws = wipeState(now);
+  gl.uniform1f(LQ.u.mixT, now - LQ.mixStart >= BG_FADE_MS ? 1 : ws.k);
+  gl.uniform1f(LQ.u.wipeR, ws.r / H);
+  gl.uniform2f(LQ.u.wipeC, ws.cx / W, ws.cy / H);
+  gl.uniform1i(LQ.u.texPrev, 1);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, LQ.texPrev);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, LQ.tex);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
@@ -733,31 +777,52 @@ const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
  *  - then pick the most colorful lightness of that hue that clears the contrast target
  */
 const MAX_BG_LUM = 0.15;      // backgrounds brighter than this get shaded down (just enough)
+/** Colors glide from the old song's to the new one's: hue the short way round, saturation and brightness alongside. */
+const COLOR_FADE_MS = 1800;
+const tone = { cur:null, from:null, to:null, t0:0 };
 function setTextColors(h, s, bgL){
+  const to = [h, s, bgL];
+  if (!tone.cur){ tone.cur = to; applyTextColors(...to, true); return; }
+  if (tone.to && to.every((v, i) => Math.abs(v - tone.to[i]) < 1e-3)) return;
+  tone.from = tone.cur.slice(); tone.to = to; tone.t0 = performance.now() + (bgFadeNext ? 300 : 0);
+}
+function tickColors(now){
+  if (!tone.to) return;
+  const k = clamp((now - tone.t0) / COLOR_FADE_MS, 0, 1), e = k*k*(3 - 2*k);
+  if (now < tone.t0) return;
+  const [h0, s0, l0] = tone.from, [h1, s1, l1] = tone.to;
+  const dh = ((h1 - h0 + 540) % 360) - 180;
+  tone.cur = [(h0 + dh*e + 360) % 360, s0 + (s1 - s0)*e, l0 + (l1 - l0)*e];
+  applyTextColors(...tone.cur, k >= 1);
+  if (k >= 1) tone.to = null;
+}
+function applyTextColors(h, s, bgL, settled){
+  h = Math.round(h);
   const shade = bgL > MAX_BG_LUM ? 1 - MAX_BG_LUM / bgL : 0;
   const effL = bgL * (1 - shade);
   const root = document.documentElement.style;
   root.setProperty('--shade', shade.toFixed(3));
 
-  const grey = s < 12;                                          // black & white covers stay neutral
-  const sClock = grey ? 0 : clamp(s*0.55, 18, 55);
-  const sWord  = grey ? 0 : clamp(s, 55, 95);
+  // black & white covers stay neutral (fading in and out of color gradually, not at a hard cut)
+  const col = clamp((s - 6) / 12, 0, 1), grey = col === 0;
+  const sClock = Math.round(col * clamp(s*0.55, 18, 55));
+  const sWord  = Math.round(col * clamp(s, 55, 95));
   const lClock = readable(h, sClock, effL, 4.5);                // big clock text: comfortably readable
   const lWord  = readable(h, sWord, effL, 3.6);                 // the sung word is huge + glowing, so it can be more colorful
   root.setProperty('--clock', `hsl(${h},${sClock}%,${Math.max(lClock, 80)}%)`);
   setVisPalette(h, sWord, Math.max(lWord, 64), sClock, Math.max(lClock, 80));
-  root.setProperty('--clockGlow', `hsla(${h},${grey ? 0 : clamp(s,40,90)}%,50%,.45)`);
+  root.setProperty('--clockGlow', `hsla(${h},${Math.round(col * clamp(s,40,90))}%,50%,.45)`);
   root.setProperty('--word', `hsl(${h},${sWord}%,${Math.max(lWord, 64)}%)`);
   root.setProperty('--wordGlow1', `hsla(${h},${sWord}%,62%,.85)`);
   root.setProperty('--wordGlow2', `hsla(${h},${sWord}%,50%,.6)`);
   root.setProperty('--wordGlow3', `hsla(${h},${sWord}%,40%,.45)`);
-  accentColor = `hsl(${h},${grey ? 0 : clamp(s,50,90)}%,58%)`;
-  store.set('accentColor', accentColor);                // the wallpaper's control window uses it too
+  accentColor = `hsl(${h},${Math.round(col * clamp(s,50,90))}%,58%)`;
+  if (settled) store.set('accentColor', accentColor);   // the wallpaper's control window uses it too
   root.setProperty('--accent', accentColor);
   shadeAmt = shade; glClock = hslToRgb(h, sClock, Math.max(lClock, 80)).map(v => v/255); glWord = hslToRgb(h, sWord, Math.max(lWord, 64)).map(v => v/255);
   spriteCache.clear();
 
-  const sInk = grey ? 0 : clamp(s*0.35, 10, 40);
+  const sInk = Math.round(col * clamp(s*0.35, 10, 40));
   ink.star  = hslToRgb(h, sInk, 93);
   ink.label = hslToRgb(h, sInk, Math.max(readable(h, sInk, effL, 4.5), 84));
   ink.line  = hslToRgb(h, sInk, 88);
@@ -803,7 +868,7 @@ $('#chkBlur').onchange = e => {
   applyBackground();
 };
 $('#chkCollage').onchange = e => { bg.collage = e.target.checked; store.set('bgCollage', bg.collage ? '1' : ''); applyBackground(); };
-$('#btnShuffle').onclick = () => { bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; renderBackground(); };
+$('#btnShuffle').onclick = () => { bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; bgFadeNext = true; renderBackground(); };
 $('#chkLiquid').onchange = e => { bg.liquid = e.target.checked; store.set('bgLiquid', bg.liquid ? '1' : ''); };
 $('#chkLight').onchange = e => { bg.light = e.target.checked; store.set('bgLight', bg.light ? '1' : ''); document.body.classList.toggle('nolightbar', !bg.light); };
 function setVisStyle(v){
@@ -1148,7 +1213,7 @@ function starXY(c, s){
    Radial visualizer: the album cover spins slowly in the middle like a record,
    with the bars standing out around it (bass at the left and right, treble at the top and bottom)
    ========================================================================= */
-const disc = { url:null, art:null, fade:0 };
+const disc = { url:null, art:null, prev:null, swapAt:0, fade:0 };
 async function loadDisc(){
   if (visStyle !== 'radial' || !albumURL || albumURL === disc.url) return;
   const want = albumURL, img = await loadImg(albumURL);
@@ -1165,6 +1230,7 @@ async function loadDisc(){
   const sh = g.createLinearGradient(0, 0, S, S);
   sh.addColorStop(0.35, 'rgba(255,255,255,0)'); sh.addColorStop(0.5, 'rgba(255,255,255,.10)'); sh.addColorStop(0.65, 'rgba(255,255,255,0)');
   g.fillStyle = sh; g.fillRect(0, 0, S, S);
+  disc.prev = disc.art; disc.swapAt = performance.now();
   disc.art = c; disc.url = want;
 }
 /** Middle of the radial visualizer and how much room it takes (with its tallest bars). */
@@ -1226,7 +1292,10 @@ function drawRadial(now){
   ctx.shadowBlur = 0;
   if (disc.art){
     ctx.translate(z.x, z.y); ctx.rotate((now / 1000) * (Math.PI*2 / 36));   // one turn every 36 s
+    const m = clamp((now - disc.swapAt) / BG_FADE_MS, 0, 1);
+    if (disc.prev && m < 1){ ctx.drawImage(disc.prev, -rd, -rd, rd*2, rd*2); ctx.globalAlpha = disc.fade * m*m*(3 - 2*m); }
     ctx.drawImage(disc.art, -rd, -rd, rd*2, rd*2);
+    ctx.globalAlpha = disc.fade;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
   ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5; ctx.globalAlpha = disc.fade * 0.8;
@@ -1250,6 +1319,22 @@ const INTERLUDE_MIN_GAP = 6000;     // only gaps at least this long count
 const skySpin = { a:0, cos:1, sin:0 };
 const interlude = { k:0, speed:0, warp:[], rings:[], shots:[], vx:0.5, vy:0.5, next:0, wait:0 };
 
+/** The one ring that carries the new cover outward, in the new song's color. */
+function drawWipeRing(now){
+  if (!LQ.ok) return;
+  const w = wipeState(now);
+  if (w.k <= 0 || w.k >= 1) return;
+  const a = clamp(w.k / 0.08, 0, 1) * clamp((1 - w.k) / 0.25, 0, 1);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = accentColor; ctx.shadowColor = accentColor; ctx.shadowBlur = 22;
+  ctx.globalAlpha = 0.85 * a; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(w.cx, w.cy, Math.max(1, w.r - H*0.035), 0, Math.PI*2); ctx.stroke();
+  ctx.shadowBlur = 0; ctx.globalAlpha = 0.25 * a; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.arc(w.cx, w.cy, Math.max(1, w.r - H*0.035), 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
+}
+
 /** 0..1: how much this moment is an instrumental part, plus when the words come back. */
 function interludeState(p){
   const L = engine.lines;
@@ -1266,20 +1351,24 @@ function interludeState(p){
 }
 
 function drawInterlude(p, now, dt){
-  const target = interludeState(p);
+  // a new song: warp speed while the ring carries the new cover out, easing off as it reaches the edges
+  const sk = (now - songFx.t0) / BG_FADE_MS;
+  const songWarp = songFx.warp && bg.interlude !== false && sk < 1.15 ? clamp(sk / 0.12, 0, 1) * clamp((1.15 - sk) / 0.45, 0, 1) : 0;
+  const target = Math.max(interludeState(p), songWarp);
   const I = interlude;
   I.k += (target - I.k) * ease(dt, target > I.k ? 1.2 : 0.35);
   // the sky turns while we're in one, then settles back before the words return
   skySpin.a += I.k * dt * 0.012 - skySpin.a * ease(dt, 0.8) * (1 - I.k);
   if (Math.abs(skySpin.a) < 1e-4 && I.k < 0.01) skySpin.a = 0;
   skySpin.cos = Math.cos(skySpin.a); skySpin.sin = Math.sin(skySpin.a);
+  drawWipeRing(now);
   if (I.k < 0.01 && !I.rings.length && !I.shots.length){ I.warp.length = 0; return; }
 
   const u = Math.min(W, H), k = I.k;
   const hearing = beat.live && sysHearing();
   const loud = hearing ? beat.loud : 0.35 + 0.15*Math.sin(now/900);
   // warp speed follows the bass; paused music coasts to a crawl
-  const want = engine.playing ? 0.18 + loud * 1.1 : 0.03;
+  const want = (engine.playing ? 0.18 + loud * 1.1 : 0.03) + songWarp * 0.9;
   I.speed += (want - I.speed) * ease(dt, 0.25);
   if (hearing && beat.kick) I.speed += 0.25 + beat.kickSize * 0.08;
 
@@ -1612,6 +1701,7 @@ function frame(now){
   if (W !== innerWidth || H !== innerHeight){ resize(); renderBackground(); }
   const p = pos();
   updateLines(p);
+  tickColors(now);
   drawSky(p, now);
   animateMask(now);
   drawVis(now);
@@ -1828,7 +1918,7 @@ let helperUp = false;
 let PLATFORM = 'mac', PLAY_SOMETHING = 'Play something in Spotify or Apple Music';
 const IN_APP = /Electron/.test(navigator.userAgent);
 if (WALLPAPER) addEventListener('storage', e => {
-  if (e.key === 'wpShuffle'){ bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; renderBackground(); return; }
+  if (e.key === 'wpShuffle'){ bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; bgFadeNext = true; renderBackground(); return; }
   if (!e.key || !/^(bg|visStyle$)/.test(e.key)) return;
   const was = { glitch: bg.glitch, source: bg.source };
   bg.source = store.get('bgSource', 'album');
