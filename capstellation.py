@@ -177,6 +177,8 @@ def now_playing():
                     if r is None:
                         continue
                     (errors if "error" in r else found).append(r)
+                    if p == "spotify" and r.get("state") == "playing":
+                        break           # Spotify is playing: no need to ask Music too (half the AppleScript work)
                 found.sort(key=lambda r: (r["state"] != "playing", r["player"] != "spotify"))
                 if found:
                     data = {"ok": True, **found[0]}

@@ -14,7 +14,7 @@ That starts the app and opens **http://127.0.0.1:8787** in your browser. Chrome 
 
 macOS asks for two permissions the first time. Click **OK / Allow** for both:
 - **Automation** (Terminal → Spotify / Music), to read what's playing.
-- **Screen & System Audio Recording** (Terminal), to *hear the music itself* for the visualizer, the beat-synced glitch and Listen mode. Only Spotify's and Apple Music's own audio is captured: never the microphone, other apps or notifications. After allowing it, restart the helper.
+- **Screen & System Audio Recording** (Terminal), to *hear the music itself* for the visualizer and the beat-synced glitch. Only Spotify's and Apple Music's own audio is captured: never the microphone, other apps or notifications. After allowing it, restart the helper.
 
 The first run also builds a small native audio tap (`audiotap.swift`, about 30 s). The helper otherwise uses only Python's standard library. If `python3` or `swiftc` isn't found, run `xcode-select --install` once.
 
@@ -53,21 +53,21 @@ The first launch builds the audio tap. macOS asks for Automation and Screen & Sy
 
 ## Keys
 
+Press **?** (or click the **?** button in the top right) for this list in the app.
+
 | Key | Action |
 |---|---|
-| F / double-click | Fullscreen |
-| H | Hide all UI. Click anywhere (or press H) to bring it back; moving the mouse won't |
-| C | Toggle the clock |
-| V | Toggle the visualizer |
-| [ / ] | Nudge lyric timing ±250 ms (saved) |
+| F / double-click / ⛶ button | Fullscreen on / off |
+| H | Hide everything. Click anywhere to bring it back; moving the mouse won't |
+| C | Show / hide the clock |
+| V | Show / hide the visualizer |
+| [ / ] | Lyrics earlier / later by ¼ s (saved) |
 
 ## Sources
 
 **Mac (default).** `capstellation.py` asks the Spotify and Apple Music desktop apps, through AppleScript, what's playing: title, artist, album, exact position, and play/pause. The page checks every 0.8 s, so skips and pauses show up almost immediately and timing is exact. It needs no keys or accounts. If both apps are open, whichever is playing wins. Lyric and artwork lookups also go through the helper, so browser extensions can't block them.
 
 **Spotify (Web API).** Use this on a non-Mac computer, or to follow Spotify playing on another device. Create an app at developer.spotify.com/dashboard, add the Redirect URI shown in the app (e.g. `http://127.0.0.1:8787/`), and paste the Client ID.
-
-**Listen.** Identifies the song from its sound with the AudD API, which needs a token from dashboard.audd.io. **Listen to Mac audio** uses the helper's tap (Spotify/Music audio, no microphone); **Tab** and **Mic** are there for other sources. A token is needed because recognizing a song from raw sound means matching it against a fingerprint database. When the Mac helper is running, recognition requests go through it, which avoids browser blocking. Until the first match it retries every ~1 s; after that it re-checks every ~15 s to catch skips.
 
 Lyrics come from **lrclib.net** (free, no key). Covers come from Spotify, or the iTunes Search API as a fallback.
 

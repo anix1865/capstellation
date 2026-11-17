@@ -216,6 +216,7 @@ function createServer({ root, tap }){
         for (const p of ['spotify', 'music']){
           const r = await askMac(p);
           if (r) (r.error ? errors : found).push(r);
+          if (p === 'spotify' && r && r.state === 'playing') break;   // no need to ask Music too
         }
         found.sort((a, b) => (a.state !== 'playing') - (b.state !== 'playing') || (a.player !== 'spotify') - (b.player !== 'spotify'));
         const d = found.length ? { ok: true, ...found[0] } : errors.length ? { ok: false, error: errors[0].error } : { ok: true, state: 'none' };
