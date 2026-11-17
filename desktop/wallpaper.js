@@ -19,7 +19,7 @@ const ICON = {
 };
 
 let wallWin = null, tray = null, ctrlWin = null;
-const CTRL = { closed: [96, 54], open: [272, 356] };   // control window size (px)
+const CTRL = { closed: [94, 52], open: [272, 360] };   // control window size (px)
 const state = { active: false };
 
 function helperExe(nativeDir){
@@ -107,7 +107,7 @@ function sendInsets(){
 function makeControls(url){
   const w = screen.getPrimaryDisplay().workArea;
   ctrlWin = new BrowserWindow({
-    x: w.x + 10, y: w.y + 8, width: CTRL.closed[0], height: CTRL.closed[1],
+    x: w.x, y: w.y, width: CTRL.closed[0], height: CTRL.closed[1],
     frame: false, transparent: true, hasShadow: false, resizable: false, maximizable: false, minimizable: false,
     fullscreenable: false, skipTaskbar: true, show: false, title: 'Capstellation',
     acceptFirstMouse: true,          // macOS: the first click works even when another app is in front
@@ -175,7 +175,7 @@ function refit(){
   const b = screen.getPrimaryDisplay().bounds;
   if (process.platform === 'darwin') wallWin.setBounds(b);
   sendInsets();
-  if (ctrlWin){ const w = screen.getPrimaryDisplay().workArea, c = ctrlWin.getBounds(); ctrlWin.setBounds({ ...c, x: w.x + 10, y: w.y + 8 }); }
+  if (ctrlWin){ const w = screen.getPrimaryDisplay().workArea, c = ctrlWin.getBounds(); ctrlWin.setBounds({ ...c, x: w.x, y: w.y }); }
 }
 
 /** Stop wallpaper mode and put the normal desktop picture back. */
