@@ -5,7 +5,7 @@ name: Desktop app
 on:
   push:
     branches: [main]
-    paths: ['index.html', 'audiotap.swift', 'desktop/**', 'native/**']
+    paths: ['index.html', 'controls.html', 'audiotap.swift', 'desktop/**', 'native/**']
   workflow_dispatch: {}
 
 # Every build is published as a GitHub Release (v0.1.<run number>); the app checks it on launch.

@@ -63,6 +63,7 @@ body.novis canvas#vis, body.radial canvas#vis{opacity:0}
 label.chk{white-space:nowrap}
 /* wallpaper mode: just the picture, no controls */
 body.wallpaper #ui, body.wallpaper #hint{display:none}
+body.wallpaper #clock{top:calc(var(--wpT,0px) + 4.5vh)}
 #visRow{display:none;margin-top:10px}
 #visRow.on{display:flex}
 #clock{position:absolute;top:5.5vh;left:0;right:0;text-align:center;pointer-events:none;transition:opacity .6s}
@@ -135,10 +136,13 @@ body.helpopen #help{display:block}
 #help dd{margin:0;opacity:.8;line-height:1.45}
 #help kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,220,190,.25);background:rgba(255,255,255,.06);font:12px 'Space Mono',monospace}
 #helpClose{position:absolute;right:10px;top:10px;width:28px;height:28px;padding:0;border-radius:50%;font-size:16px;line-height:1}
-#nowplaying{position:absolute;right:18px;bottom:18px;padding:10px 14px;max-width:44vw;text-align:right;display:none}
+#nowplaying{position:absolute;right:22px;top:calc(var(--wpT,0px) + 72px);max-width:32vw;text-align:right;display:none;pointer-events:none;
+  color:var(--clock);text-shadow:0 1px 12px rgba(0,0,0,.6);transition:opacity .6s,color 1.2s}
 #nowplaying.on{display:block}
-#npTitle{font-family:'Instrument Serif',serif;font-size:20px;line-height:1.1}
-#npArtist{opacity:.7;margin-top:2px}
+#npTitle{font-family:'Instrument Serif',serif;font-size:clamp(18px,1.6vw,26px);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#npArtist{font-family:'Montserrat',sans-serif;font-weight:500;font-size:clamp(11px,.95vw,14px);letter-spacing:.06em;opacity:.75;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.zen #nowplaying{opacity:0}
+body.wallpaper #nowplaying{top:calc(var(--wpT,0px) + 18px)}
 @media (max-width:820px){#nowplaying{display:none!important}}
 </style>
 </head>
@@ -156,6 +160,7 @@ body.helpopen #help{display:block}
   <div id="clock"><div id="date"></div><div id="time"></div></div>
   <div id="wordPos"><div id="word"></div></div>
   <div id="hint"></div>
+  <div id="nowplaying"><div id="npTitle"></div><div id="npArtist"></div></div>
   <div id="lightbar"><i></i><b></b></div>
 </div>
 
@@ -234,13 +239,19 @@ body.helpopen #help{display:block}
     <div id="status"></div>
   </div>
 
-  <div id="nowplaying" class="glass"><div id="npTitle"></div><div id="npArtist"></div></div>
 </div>
 
 <script>
 "use strict";
 const WALLPAPER = new URLSearchParams(location.search).has('wallpaper');
-if (WALLPAPER) document.body.classList.add('wallpaper', 'zen');
+if (WALLPAPER) document.body.classList.add('wallpaper');
+/** Wallpaper mode: how much of each screen edge the menu bar, Dock or taskbar covers (set by the app). */
+const wallInsets = { t:0, r:0, b:0, l:0 };
+function setWallInsets(t, r, b, l){
+  Object.assign(wallInsets, { t, r, b, l });
+  const st = document.documentElement.style;
+  st.setProperty('--wpT', t + 'px'); st.setProperty('--wpR', r + 'px'); st.setProperty('--wpB', b + 'px'); st.setProperty('--wpL', l + 'px');
+}
 /* =========================================================================
    Config
    ========================================================================= */
@@ -740,6 +751,7 @@ function setTextColors(h, s, bgL){
   root.setProperty('--wordGlow2', `hsla(${h},${sWord}%,50%,.6)`);
   root.setProperty('--wordGlow3', `hsla(${h},${sWord}%,40%,.45)`);
   accentColor = `hsl(${h},${grey ? 0 : clamp(s,50,90)}%,58%)`;
+  store.set('accentColor', accentColor);                // the wallpaper's control window uses it too
   root.setProperty('--accent', accentColor);
   shadeAmt = shade; glClock = hslToRgb(h, sClock, Math.max(lClock, 80)).map(v => v/255); glWord = hslToRgb(h, sWord, Math.max(lWord, 64)).map(v => v/255);
   spriteCache.clear();
@@ -1270,10 +1282,10 @@ function drawInterlude(p, now, dt){
   I.speed += (want - I.speed) * ease(dt, 0.25);
   if (hearing && beat.kick) I.speed += 0.25 + beat.kickSize * 0.08;
 
-  // vanishing point wanders a little so it doesn't feel like a screensaver
+  // stars stream out from the exact middle of the screen (or from the record, with the radial visualizer)
   const rz = radialZone();
   if (rz){ I.vx = rz.x / W; I.vy = rz.y / H; }
-  else { I.vx = 0.5 + 0.06*Math.sin(now/7300); I.vy = 0.5 + 0.05*Math.sin(now/5900 + 1); }
+  else { I.vx = 0.5; I.vy = 0.5; }
   const cx = I.vx*W, cy = I.vy*H, far = Math.hypot(W, H) * 0.6;
 
   // ---- warp stars ----
@@ -1814,6 +1826,22 @@ let helperUp = false;
 /** Wording that depends on where we're running: the Mac helper, the Mac app, or the Windows app. */
 let PLATFORM = 'mac', PLAY_SOMETHING = 'Play something in Spotify or Apple Music';
 const IN_APP = /Electron/.test(navigator.userAgent);
+if (WALLPAPER) addEventListener('storage', e => {
+  if (e.key === 'wpShuffle'){ bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; renderBackground(); return; }
+  if (!e.key || !/^(bg|visStyle$)/.test(e.key)) return;
+  const was = { glitch: bg.glitch, source: bg.source };
+  bg.source = store.get('bgSource', 'album');
+  bg.blur = store.get('bgBlur', '') === '1';
+  bg.blurAlbum = store.get('bgBlurAlbum', '1') === '1';
+  bg.collage = store.get('bgCollage', '1') === '1';
+  bg.glitch = store.get('bgGlitch', '') === '1';
+  bg.liquid = store.get('bgLiquid', '1') === '1';
+  bg.light = store.get('bgLight', '1') === '1';
+  bg.interlude = store.get('bgInterlude', '1') === '1';
+  if (was.glitch && !bg.glitch){ gctx.clearRect(0,0,gcv.width,gcv.height); document.body.classList.remove('glitching'); }
+  setVisStyle(store.get('visStyle', 'bars'));
+  applyBackground();
+});
 if (IN_APP && !WALLPAPER) $('#wallRow').style.display = '';
 $('#btnWallpaper').onclick = async e => {
   e.stopPropagation();

@@ -33,7 +33,8 @@ const hooks = {
     try{ await (on ? startWallpaper() : stopWallpaper()); return { ok: true }; }
     catch(e){ return { ok: false, error: String(e.message || e) }; }
   },
-  tint: () => { wallpaper.tint(); return { ok: true }; },   // the wallpaper page drew a new background
+  tint: () => { wallpaper.tint(); return { ok: true }; },
+  controls: open => wallpaper.controls(open),               // open / close the corner control's settings   // the wallpaper page drew a new background
 };
 
 async function createWindow(){

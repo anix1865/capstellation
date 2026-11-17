@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Capstellation controls</title>
+<!-- The little control in the top-left corner while Capstellation is your wallpaper.
+     The wallpaper itself sits behind the desktop icons and can't be clicked, so this small window
+     does it instead. Settings are saved where the wallpaper page reads them, and it follows along. -->
+<style>
+@font-face{font-family:'Space Mono';src:local('Space Mono'),local('SpaceMono-Regular')}
+*{box-sizing:border-box;margin:0}
+html,body{background:transparent;overflow:hidden;font:12px/1.4 'Space Mono',ui-monospace,Menlo,Consolas,monospace;color:#f3ece6;user-select:none;-webkit-user-select:none}
+.glass{background:rgba(14,12,12,.62);backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);
+  border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 6px 22px rgba(0,0,0,.35)}
+#bar{display:inline-flex;gap:4px;padding:4px;margin:4px}
+button{font:inherit;color:inherit;background:transparent;border:1px solid transparent;border-radius:10px;cursor:pointer}
+#bar button{width:36px;height:36px;display:grid;place-items:center}
+#bar button:hover,#bar button.open{background:rgba(255,255,255,.12)}
+#bar button:active{transform:scale(.94)}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#arrow svg{transition:transform .2s}
+#arrow.open svg{transform:rotate(180deg)}
+#menu{margin:0 4px 4px;padding:12px;display:none}
+body.open #menu{display:block}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.lbl{opacity:.65;flex:1 0 100%;margin-bottom:-2px}
+.seg button{flex:1;padding:6px 8px;border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05)}
+.seg button.on{background:var(--accent,#e07a45);border-color:transparent;color:#140c08;font-weight:700}
+label{display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;flex:1 0 45%}
+input[type=checkbox]{accent-color:var(--accent,#e07a45);width:15px;height:15px;margin:0}
+#stop{width:100%;padding:7px;border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05);margin-top:2px}
+#stop:hover{background:rgba(255,255,255,.12)}
+hr{border:0;border-top:1px solid rgba(255,255,255,.1);margin:4px 0 10px}
+</style>
+</head>
+<body>
+<div id="bar" class="glass">
+  <button id="shuffle" title="Shuffle the collage" aria-label="Shuffle the collage">
+    <svg viewBox="0 0 24 24"><path d="M3 7h3.5c2 0 3.3 1 4.5 3l2 4c1.2 2 2.5 3 4.5 3H21M3 17h3.5c1.2 0 2.1-.4 2.9-1.1M14.6 8.1c.8-.7 1.7-1.1 2.9-1.1H21M18 4l3 3-3 3M18 14l3 3-3 3"/></svg>
+  </button>
+  <button id="arrow" title="More settings" aria-label="More settings" aria-expanded="false">
+    <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+</div>
+<div id="menu" class="glass">
+  <div class="row seg" id="srcRow">
+    <span class="lbl">Background</span>
+    <button data-src="album">Album art</button>
+    <button data-src="static">My image</button>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" data-key="bgCollage" data-def="1"> Collage</label>
+    <label><input type="checkbox" id="blur"> Blur</label>
+    <label><input type="checkbox" data-key="bgLiquid" data-def="1"> Liquid</label>
+    <label><input type="checkbox" data-key="bgLight" data-def="1"> Light bar</label>
+    <label><input type="checkbox" data-key="bgGlitch" data-def=""> Glitch</label>
+    <label><input type="checkbox" data-key="bgInterlude" data-def="1"> Interludes</label>
+  </div>
+  <div class="row seg">
+    <span class="lbl">Visualizer</span>
+    <button data-vis="bars">Bars</button>
+    <button data-vis="radial">Radial</button>
+  </div>
+  <hr>
+  <button id="stop">Stop wallpaper</button>
+</div>
+<script>
+"use strict";
+const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
+const get = (k, d) => { const v = localStorage.getItem(k); return v === null ? d : v; };
+const set = (k, v) => localStorage.setItem(k, v);     // the wallpaper page hears this (storage event)
+const accent = get('accentColor', null); if (accent) document.documentElement.style.setProperty('--accent', accent);
+
+function render(){
+  const src = get('bgSource', 'album'), hasImg = !!get('bgImage', null);
+  $('#srcRow').style.display = hasImg ? '' : 'none';
+  $$('[data-src]').forEach(b => b.classList.toggle('on', b.dataset.src === (hasImg ? src : 'album')));
+  $$('[data-key]').forEach(c => c.checked = get(c.dataset.key, c.dataset.def) === '1');
+  $('#blur').checked = (src === 'static' && hasImg) ? get('bgBlur', '') === '1' : get('bgBlurAlbum', '1') === '1';
+  $$('[data-vis]').forEach(b => b.classList.toggle('on', b.dataset.vis === get('visStyle', 'bars')));
+}
+$$('[data-key]').forEach(c => c.onchange = () => set(c.dataset.key, c.checked ? '1' : ''));
+$('#blur').onchange = e => {
+  if (get('bgSource', 'album') === 'static' && get('bgImage', null)) set('bgBlur', e.target.checked ? '1' : '');
+  else set('bgBlurAlbum', e.target.checked ? '1' : '0');
+};
+$$('[data-src]').forEach(b => b.onclick = () => { set('bgSource', b.dataset.src); render(); });
+$$('[data-vis]').forEach(b => b.onclick = () => { set('visStyle', b.dataset.vis); render(); });
+$('#shuffle').onclick = () => set('wpShuffle', String(Date.now()));
+$('#stop').onclick = () => fetch('wallpaper', { method:'POST', body: JSON.stringify({ on:false }) });
+
+// the arrow opens the settings; clicking it again, or anywhere outside, closes them
+let open = false;
+async function setOpen(v){
+  if (v === open) return;
+  open = v;
+  $('#arrow').classList.toggle('open', open); $('#arrow').setAttribute('aria-expanded', open);
+  if (open){
+    render();
+    await fetch('wallpaper/controls?open=1', { method:'POST' }).catch(() => {});   // grow the window first
+    document.body.classList.add('open');
+  } else {
+    document.body.classList.remove('open');
+    fetch('wallpaper/controls?open=0', { method:'POST' }).catch(() => {});
+  }
+}
+$('#arrow').onclick = () => setOpen(!open);
+addEventListener('blur', () => setOpen(false));
+addEventListener('keydown', e => { if (e.key === 'Escape') setOpen(false); });
+addEventListener('storage', () => { if (open) render(); });
+</script>
+</body>
+</html>

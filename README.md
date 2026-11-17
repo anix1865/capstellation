@@ -49,7 +49,7 @@ Play something in **Spotify** or **Apple Music** (on Windows, any player that sh
 
 **Visualizer** (panel): **Bars** along the bottom, or **Radial**: the album cover spins slowly in the middle like a record, with the bars standing out around it. The constellations steer around it.
 
-**Use as wallpaper** (panel, desktop app only): Capstellation plays behind your desktop icons on your main screen instead of in a window. It's click-through, so the desktop works as normal. To turn it off, use the star icon in the menu bar (Mac) or the system tray (Windows), or click Capstellation in the Dock.
+**Use as wallpaper** (panel, desktop app only): Capstellation plays behind your desktop icons on your main screen instead of in a window. It's click-through, so the desktop works as normal, and the clock and song name stay clear of the menu bar. A small control in the top-left corner shuffles the collage, and its arrow opens the other settings. To turn it off, use **Stop wallpaper** there, use the star icon in the menu bar (Mac) or the system tray (Windows), or click Capstellation in the Dock.
 
 The clock, lyrics, stars, visualizer and light bar all take their colors from the background, always at a brightness that keeps them readable.
 

@@ -35,6 +35,10 @@
         "to": "web/index.html"
       },
       {
+        "from": "../controls.html",
+        "to": "web/controls.html"
+      },
+      {
         "from": "native-bin/${os}",
         "to": "native",
         "filter": [

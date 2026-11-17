@@ -18,7 +18,8 @@ const ICON = {
   win: 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAADx0lEQVR4XtWXz2tcVRTHP+fel4wjKIa2ASsUfzXETaxaTNOKGXFTdaOLySKKiAtd+TcM8yeIK124EOlistBVXYh0IjZpSkuwLmxQoVjcWEsXrQ5J3rtH7nl5mUwm0nmTKvgNgcvcH+fc+/2e770P9gH98HRFW/XqPpbADTNZG4183viBGRh9LTa1VffDrDVUAtTa+bwkvAz6irUP/S7/XQI3xtWCqZwAnrd2uxaGSaB01goioHr2gwp3/rgGPMSmHJY3z9xSRUTikMFRnoJGI0/6zs0JnDtEJbmPCsfst4V66fVKT9jmXzlFJfF4B4FIxVA6KJ9AwT/MWtBMIyEnrd3tGxilNLDN/8fvjTB2e43EP2aMZ9lvkB6VuYVOMWbQDMqdQMH/2J+P49wR0gBpULx/hFCZsKDFmAFRLoFa28Udgs5QHfEoadw/1QQkzFjMwiMGxEAJROczp+tM+RgddLaPPNnSQWfKx7HbbnkX9GnAdmjHmLudNBfjLnugrfk1Rv0EG5EDYDRxbGZrUj8z2Te2MZvkv9UCzabmG+jCErBs49HdGFeZW8j6A771JC48B5xA5AVUnyXY3GIDai0nl1H9DrhAcJdl7vOf+9eqe7Ptdi1Isxn6T0BV+OLtSYTjpNkphBlUJqkmoziBzQDrfYeSo5LASPQFhU66gehVlGUSfx7lEm98dlVEek9Az56u0DnwDE5eJNNplKeBR6l4b6ZrSs/iwWWo8e8Q2Vs7qiGqEbE/T+IhcdEnYD2LJ3sN4Xu8rBD0W6o3Vx3XE0/gQeAw8DCiB0lcHjxOtP+7SWkPxDnF/LiWrakHLUaMFWNeT6Kodwnsy3cfIKRPodm0ca4cR3mC+0e88TwIBTH4X5sZwi8Il0wT4ldwyY/y+qe3+0VYCKNWCyLNnmtVz80m3Dpy1DSRhZOoxuv32JbsekUIq4hcxLsl43zs15/kpd4qUm042l3B7yFCxG61qNR/rIoSZVhsLt4T9YWw+7reqtEddWn3ebcUe3xhesrLqx+tgy6ZD6xnWz7gHRvpRSvp+E5YuZJt1/0eZb0TfQnshhlHsxlZDXrO9Cggiyjv9LqTLFlf9UqWm9fiQModyIq3Ec0jz2GZjoksbsDTSWN1LltfyafZ/+s6Nmdo1b28/8kmKiuMFEbDqr0FYl9J1yhHQUT3+Z2THEOKLO3qGxjlEyg4Fs6znmbEQnBcsIj/9pPMyuweP8uHQvEZpq35r7U1/4MlVnyulUR5CnbqQDQevRlQ2adYgeESKHSQum9AvhqW/33jXnye/w1Y3rYP5r6/6gAAAABJRU5ErkJggg==',
 };
 
-let wallWin = null, tray = null;
+let wallWin = null, tray = null, ctrlWin = null;
+const CTRL = { closed: [96, 54], open: [272, 356] };   // control window size (px)
 const state = { active: false };
 
 function helperExe(nativeDir){
@@ -94,6 +95,37 @@ function makeTray(onStop){
   if (process.platform === 'win32') tray.on('click', () => tray.popUpContextMenu());
 }
 
+/** Tell the page how much of the screen the menu bar, Dock or taskbar covers, so nothing hides under them. */
+function sendInsets(){
+  if (!wallWin || wallWin.isDestroyed()) return;
+  const d = screen.getPrimaryDisplay(), b = d.bounds, w = d.workArea;
+  const t = w.y - b.y, l = w.x - b.x, r = b.x + b.width - (w.x + w.width), bt = b.y + b.height - (w.y + w.height);
+  wallWin.webContents.executeJavaScript(`typeof setWallInsets === 'function' && setWallInsets(${t},${r},${bt},${l})`).catch(() => {});
+}
+
+/** The small shuffle / settings control in the top-left corner (the wallpaper itself can't be clicked). */
+function makeControls(url){
+  const w = screen.getPrimaryDisplay().workArea;
+  ctrlWin = new BrowserWindow({
+    x: w.x + 10, y: w.y + 8, width: CTRL.closed[0], height: CTRL.closed[1],
+    frame: false, transparent: true, hasShadow: false, resizable: false, maximizable: false, minimizable: false,
+    fullscreenable: false, skipTaskbar: true, show: false, title: 'Capstellation',
+    acceptFirstMouse: true,          // macOS: the first click works even when another app is in front
+    backgroundColor: '#00000000',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  if (process.platform === 'darwin') ctrlWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  ctrlWin.on('closed', () => { ctrlWin = null; });
+  ctrlWin.loadURL(url + 'controls.html');
+  ctrlWin.once('ready-to-show', () => ctrlWin && ctrlWin.showInactive());
+}
+function controls(open){
+  if (!ctrlWin || ctrlWin.isDestroyed()) return { ok: false };
+  const [width, height] = open ? CTRL.open : CTRL.closed, b = ctrlWin.getBounds();
+  ctrlWin.setBounds({ x: b.x, y: b.y, width, height });
+  return { ok: true };
+}
+
 /** Start wallpaper mode. Resolves once it's showing; rejects with a readable error. */
 async function start({ url, nativeDir, onStop }){
   if (state.active) return;
@@ -111,6 +143,7 @@ async function start({ url, nativeDir, onStop }){
   wallWin.setIgnoreMouseEvents(true);
   if (mac) wallWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   wallWin.on('closed', () => { wallWin = null; });
+  wallWin.webContents.on('did-finish-load', sendInsets);
   await wallWin.loadURL(url + '?wallpaper=1');
 
   if (process.platform === 'win32'){
@@ -130,6 +163,8 @@ async function start({ url, nativeDir, onStop }){
     setTimeout(tint, 2500);              // once the page has drawn its background
   }
   state.active = true;
+  sendInsets();
+  makeControls(url);
   makeTray(onStop);
   // follow display changes (resolution, docking a laptop)
   screen.on('display-metrics-changed', refit);
@@ -139,6 +174,8 @@ function refit(){
   if (!wallWin) return;
   const b = screen.getPrimaryDisplay().bounds;
   if (process.platform === 'darwin') wallWin.setBounds(b);
+  sendInsets();
+  if (ctrlWin){ const w = screen.getPrimaryDisplay().workArea, c = ctrlWin.getBounds(); ctrlWin.setBounds({ ...c, x: w.x + 10, y: w.y + 8 }); }
 }
 
 /** Stop wallpaper mode and put the normal desktop picture back. */
@@ -147,6 +184,7 @@ async function stop({ nativeDir } = {}){
   state.active = false;
   screen.removeListener('display-metrics-changed', refit);
   if (wallWin){ wallWin.destroy(); wallWin = null; }
+  if (ctrlWin){ ctrlWin.destroy(); ctrlWin = null; }
   if (process.platform === 'darwin' && macCtx){ const d = macCtx.nativeDir; macCtx = null; await restoreMacPicture(d); }
   if (tray){ tray.destroy(); tray = null; }
   if (process.platform === 'win32' && nativeDir){
@@ -154,4 +192,4 @@ async function stop({ nativeDir } = {}){
   }
 }
 
-module.exports = { start, stop, state, tint };
+module.exports = { start, stop, state, tint, controls };
