@@ -456,6 +456,8 @@ function renderBackground(){
   bgSrcCanvas = main;
   analyzeCanvas(main, !sharp);
   liquidUpload(main, sharp);
+  // wallpaper mode on macOS: ask the app to re-tint the menu bar once the new background is showing
+  if (WALLPAPER){ clearTimeout(renderBackground.tintT); renderBackground.tintT = setTimeout(() => fetch('wallpaper/tint', { method:'POST' }).catch(() => {}), 2000); }
 }
 let bgResizeT; addEventListener('resize', () => { clearTimeout(bgResizeT); bgResizeT = setTimeout(renderBackground, 200); });
 

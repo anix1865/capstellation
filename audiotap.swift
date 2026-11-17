@@ -7,6 +7,7 @@
 //   P <base64>      the same audio as 16 kHz mono 16-bit PCM, for song recognition in Listen mode
 //   E <message>     an error the app should show
 // Human-readable notes go to stderr (printed in the helper's Terminal).
+// Also used by the app's wallpaper mode to read / set the desktop picture (see below).
 //
 // Needs macOS 13+ and "Screen & System Audio Recording" permission for Terminal
 // (System Settings > Privacy & Security). No screen pixels are kept: video is 2×2 px and ignored.
@@ -16,6 +17,32 @@ import ScreenCaptureKit
 import CoreMedia
 import AVFoundation
 import Accelerate
+import AppKit
+
+// One-off jobs for the app's wallpaper mode (the menu bar takes its tint from the real desktop picture):
+//   --get-wallpaper              prints "<path>\t<scaling>\t<clipping>" for the main screen
+//   --set-wallpaper <path> [scaling clipping]
+let cli = CommandLine.arguments
+if cli.count >= 2 && (cli[1] == "--get-wallpaper" || cli[1] == "--set-wallpaper") {
+    guard let screen = NSScreen.main ?? NSScreen.screens.first else { note("no screen"); exit(1) }
+    let ws = NSWorkspace.shared
+    if cli[1] == "--get-wallpaper" {
+        let url = ws.desktopImageURL(for: screen)
+        let o = ws.desktopImageOptions(for: screen) ?? [:]
+        let scaling = (o[.imageScaling] as? NSNumber)?.intValue ?? Int(NSImageScaling.scaleProportionallyUpOrDown.rawValue)
+        let clip = (o[.allowClipping] as? NSNumber)?.boolValue ?? true
+        print("\(url?.path ?? "")\t\(scaling)\t\(clip ? 1 : 0)")
+        exit(0)
+    }
+    guard cli.count >= 3 else { note("usage: --set-wallpaper <path>"); exit(2) }
+    let scaling = cli.count >= 4 ? (Int(cli[3]) ?? 3) : Int(NSImageScaling.scaleProportionallyUpOrDown.rawValue)
+    let clip = cli.count >= 5 ? cli[4] == "1" : true
+    let opts: [NSWorkspace.DesktopImageOptionKey: Any] = [.imageScaling: NSNumber(value: scaling), .allowClipping: NSNumber(value: clip)]
+    do {
+        for s in NSScreen.screens where s == screen { try ws.setDesktopImageURL(URL(fileURLWithPath: cli[2]), for: s, options: opts) }
+        print("ok"); exit(0)
+    } catch { note("couldn't set the desktop picture: \(error.localizedDescription)"); exit(3) }
+}
 
 let fftSize = 2048
 let hop = 800                 // 48 kHz / 800 = 60 updates a second

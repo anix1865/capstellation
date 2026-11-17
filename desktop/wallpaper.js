@@ -6,6 +6,9 @@
 //   Windows: the window is re-parented behind the desktop icons by capstellation-helper.exe
 //            (--wallpaper), the same trick wallpaper apps use.
 const { BrowserWindow, Tray, Menu, nativeImage, screen, app } = require('electron');
+// macOS: the menu bar is tinted by the real desktop picture, not by windows. So while we're the
+// wallpaper, the desktop picture is set to a snapshot of us (refreshed when the cover changes),
+// and the person's own picture is put back when wallpaper mode stops.
 const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -31,6 +34,49 @@ function runHelper(nativeDir, args){
       ok(stdout.trim());
     });
   });
+}
+
+/* ---------- macOS desktop picture (through the audiotap helper, which needs no extra permission) ---------- */
+let macCtx = null;          // { nativeDir }
+const tintDir = () => path.join(app.getPath('userData'), 'wallpaper');
+const savedFile = () => path.join(app.getPath('userData'), 'wallpaper-original.json');
+function tapRun(nativeDir, args){
+  return new Promise((ok, bad) => {
+    const bin = path.join(nativeDir, 'audiotap');
+    if (!fs.existsSync(bin)) return bad(new Error('audiotap is missing'));
+    execFile(bin, args, { timeout: 8000 }, (err, stdout, stderr) => err ? bad(new Error((stderr || err.message).trim())) : ok(stdout.trim()));
+  });
+}
+async function rememberMacPicture(nativeDir){
+  const [p, scaling, clip] = (await tapRun(nativeDir, ['--get-wallpaper'])).split('\t');
+  // if it's already one of our snapshots (the app quit mid-way), keep the original we saved before
+  if (!p || p.startsWith(tintDir())) return;
+  fs.writeFileSync(savedFile(), JSON.stringify({ path: p, scaling, clip }));
+}
+let tintBusy = false, tintAgain = false;
+/** Snapshot the wallpaper window and make it the real desktop picture, so the menu bar matches. */
+async function tint(){
+  if (process.platform !== 'darwin' || !wallWin || !macCtx) return;
+  if (tintBusy){ tintAgain = true; return; }
+  tintBusy = true;
+  try{
+    const img = await wallWin.webContents.capturePage();
+    if (img.isEmpty()) return;
+    fs.mkdirSync(tintDir(), { recursive: true });
+    const file = path.join(tintDir(), `capstellation-${Date.now()}.jpg`);     // new name each time, or macOS keeps the cached one
+    fs.writeFileSync(file, img.toJPEG(88));
+    await tapRun(macCtx.nativeDir, ['--set-wallpaper', file]);
+    for (const f of fs.readdirSync(tintDir())) if (path.join(tintDir(), f) !== file) fs.rmSync(path.join(tintDir(), f), { force: true });
+  }catch(e){ console.warn('wallpaper tint:', e.message || e); }
+  finally{ tintBusy = false; if (tintAgain){ tintAgain = false; setTimeout(tint, 500); } }
+}
+async function restoreMacPicture(nativeDir){
+  try{
+    const o = JSON.parse(fs.readFileSync(savedFile(), 'utf8'));
+    if (o.path && fs.existsSync(o.path)) await tapRun(nativeDir, ['--set-wallpaper', o.path, String(o.scaling ?? 3), String(o.clip ?? 1)]);
+    fs.rmSync(savedFile(), { force: true });
+    fs.rmSync(tintDir(), { recursive: true, force: true });
+  }catch{}
 }
 
 function makeTray(onStop){
@@ -79,6 +125,9 @@ async function start({ url, nativeDir, onStop }){
     }
   } else {
     wallWin.showInactive();
+    macCtx = { nativeDir };
+    try{ await rememberMacPicture(nativeDir); }catch(e){ console.warn('wallpaper:', e.message || e); }
+    setTimeout(tint, 2500);              // once the page has drawn its background
   }
   state.active = true;
   makeTray(onStop);
@@ -98,10 +147,11 @@ async function stop({ nativeDir } = {}){
   state.active = false;
   screen.removeListener('display-metrics-changed', refit);
   if (wallWin){ wallWin.destroy(); wallWin = null; }
+  if (process.platform === 'darwin' && macCtx){ const d = macCtx.nativeDir; macCtx = null; await restoreMacPicture(d); }
   if (tray){ tray.destroy(); tray = null; }
   if (process.platform === 'win32' && nativeDir){
     try{ await runHelper(nativeDir, ['--wallpaper-restore']); }catch{}   // repaint the normal wallpaper
   }
 }
 
-module.exports = { start, stop, state };
+module.exports = { start, stop, state, tint };

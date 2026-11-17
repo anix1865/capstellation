@@ -335,6 +335,7 @@ function createServer({ root, tap, hooks = {} }){
           try{ return json(res, await recognize(a.token || '', Number(a.seconds) || 6)); }
           catch(e){ return json(res, { status: 'error', error: { error_message: 'recognition failed: ' + (e.message || e) } }); }
         }
+        if (url.pathname === '/wallpaper/tint') return json(res, hooks.tint ? hooks.tint() : { ok: false });
         if (url.pathname === '/wallpaper'){
           if (!hooks.wallpaper) return json(res, { ok: false, error: 'only available in the Capstellation app' });
           let a = {}; try{ a = JSON.parse(body.toString() || '{}'); }catch{}
