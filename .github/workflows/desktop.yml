@@ -5,7 +5,7 @@ name: Desktop app
 on:
   push:
     branches: [main]
-    paths: ['index.html', 'audiotap.swift', 'desktop/**', 'native/**', '.github/workflows/desktop.yml']
+    paths: ['index.html', 'audiotap.swift', 'desktop/**', 'native/**']
   workflow_dispatch: {}
 
 # Every build is published as a GitHub Release (v0.1.<run number>); the app checks it on launch.
@@ -94,7 +94,8 @@ jobs:
           NOTES: ${{ github.event.head_commit.message }}
         run: |
           ls -la dist
-          printf '%s\n' "${NOTES:-Manual build}" > notes.md
+          # release notes = the commit message, without any co-author / tool trailer lines
+          printf '%s\n' "${NOTES:-Manual build}" | grep -viE '^(co-authored-by:|claude-session:)' > notes.md || true
           gh release create "v${APP_VERSION}" dist/* \
             --repo "${{ github.repository }}" \
             --title "Capstellation ${APP_VERSION}" \
