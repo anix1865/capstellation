@@ -290,6 +290,7 @@ function createServer({ root, tap, hooks = {} }){
         switch (url.pathname){
           case '/now':   return json(res, await nowPlaying());
           case '/audio': return json(res, tap.info());
+          case '/startup': return json(res, hooks.startup ? hooks.startup() : { ok: false });
           case '/levels': {
             res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
             let lastSent = null, idle = 0;
@@ -334,6 +335,10 @@ function createServer({ root, tap, hooks = {} }){
           let a = {}; try{ a = JSON.parse(body.toString() || '{}'); }catch{}
           try{ return json(res, await recognize(a.token || '', Number(a.seconds) || 6)); }
           catch(e){ return json(res, { status: 'error', error: { error_message: 'recognition failed: ' + (e.message || e) } }); }
+        }
+        if (url.pathname === '/startup'){
+          let a = {}; try{ a = JSON.parse(body.toString() || '{}'); }catch{}
+          return json(res, hooks.startup ? hooks.startup(!!a.on) : { ok: false });
         }
         if (url.pathname === '/wallpaper/controls') return json(res, hooks.controls ? hooks.controls(q.open === '1') : { ok: false });
         if (url.pathname === '/wallpaper/tint') return json(res, hooks.tint ? hooks.tint() : { ok: false });

@@ -2,6 +2,7 @@
 // Capstellation desktop app: starts the local server (server.js) and shows the UI in its own window.
 const { app, BrowserWindow, session, shell, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { startServer, PLATFORM } = require('./server');
 const { checkForUpdates } = require('./updater');
 const wallpaper = require('./wallpaper');
@@ -13,6 +14,21 @@ const paths = app.isPackaged
   : { root: repoRoot, nativeDir: path.join(__dirname, 'native-bin', PLATFORM), repoRoot };
 
 let server = null, mainWin = null;
+
+/* ---------- app settings kept by the app itself (the page's own settings live in its storage) ---------- */
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+function readSettings(){ try{ return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); }catch{ return {}; } }
+function writeSettings(patch){
+  const s = { ...readSettings(), ...patch };
+  try{ fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2)); }catch{}
+  return s;
+}
+/** Open at login: on unless turned off. Re-applied every launch so it points at the current copy of the app. */
+function applyOpenAtLogin(){
+  const on = readSettings().openAtLogin !== false;
+  if (app.isPackaged){ try{ app.setLoginItemSettings({ openAtLogin: on }); }catch{} }
+  return on;
+}
 
 /** Wallpaper mode: the page's "Use as wallpaper" button (via the local server) or the menu. */
 async function startWallpaper(){
@@ -34,7 +50,11 @@ const hooks = {
     catch(e){ return { ok: false, error: String(e.message || e) }; }
   },
   tint: () => { wallpaper.tint(); return { ok: true }; },
-  controls: open => wallpaper.controls(open),               // open / close the corner control's settings   // the wallpaper page drew a new background
+  controls: open => wallpaper.controls(open),
+  startup: on => {
+    if (typeof on === 'boolean') writeSettings({ openAtLogin: on });
+    return { ok: true, on: applyOpenAtLogin(), packaged: app.isPackaged };
+  },               // open / close the corner control's settings   // the wallpaper page drew a new background
 };
 
 async function createWindow(){
@@ -66,6 +86,7 @@ async function createWindow(){
 }
 
 app.whenReady().then(() => {
+  applyOpenAtLogin();
   // the page may use the microphone (Listen → Mic) and fullscreen; nothing else
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(['media', 'fullscreen'].includes(permission)));
   // menu: standard app menu plus "Check for Updates…" (Windows has no menu bar; use Ctrl+U)

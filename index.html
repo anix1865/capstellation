@@ -230,7 +230,8 @@ body.wallpaper #nowplaying{top:calc(var(--wpT,0px) + 18px)}
         <button data-vis="bars">Bars</button>
         <button data-vis="radial">Radial</button>
       </div>
-      <div id="wallRow" class="row" style="margin-top:8px;display:none">
+      <div id="wallRow" class="row" style="margin-top:8px;display:none;gap:12px">
+        <label class="chk" title="Start Capstellation when you log in to your computer"><input type="checkbox" id="chkStartup"> Open at login</label>
         <button id="btnWallpaper" style="flex:1" title="Plays behind your desktop icons. Turn it off from the Capstellation icon in the menu bar / system tray.">Use as wallpaper</button>
       </div>
       <input type="file" id="fileImg" accept="image/*" hidden>
@@ -1843,6 +1844,17 @@ if (WALLPAPER) addEventListener('storage', e => {
   applyBackground();
 });
 if (IN_APP && !WALLPAPER) $('#wallRow').style.display = '';
+if (IN_APP && !WALLPAPER){
+  fetch('startup', { cache:'no-store' }).then(r => r.json()).then(j => { if (j.ok) $('#chkStartup').checked = j.on; else $('#chkStartup').parentElement.style.display = 'none'; })
+    .catch(() => { $('#chkStartup').parentElement.style.display = 'none'; });
+  $('#chkStartup').onchange = async e => {
+    try{
+      const j = await (await fetch('startup', { method:'POST', body: JSON.stringify({ on: e.target.checked }) })).json();
+      e.target.checked = j.on;
+      setStatus(j.on ? 'Capstellation will open when you log in.' : 'Capstellation won’t open at login.');
+    }catch{ setStatus('Couldn’t change the login setting.'); }
+  };
+}
 $('#btnWallpaper').onclick = async e => {
   e.stopPropagation();
   try{ const r = await (await fetch('wallpaper', { method:'POST' })).json(); if (!r.ok) setStatus('Couldn’t start wallpaper mode: ' + (r.error || 'unknown error')); }
