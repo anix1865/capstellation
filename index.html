@@ -6,7 +6,7 @@
 <title>Capstellation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,800&family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,800&family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&family=Saira:wght@200;300;400&display=swap" rel="stylesheet">
 <style>
 :root{ --accent:#ff6a1a; --ink:#f3e9dc;
   /* text colors: rewritten from the background image by setTextColors() */
@@ -60,9 +60,10 @@ body:not(.idle):not(.zen) canvas#vis{bottom:calc(2.2vh + 44px)}  /* lift above t
 #visRow{display:none;margin-top:10px}
 #visRow.on{display:flex}
 #clock{position:absolute;top:5.5vh;left:0;right:0;text-align:center;pointer-events:none;transition:opacity .6s}
-#date{font-family:'Instrument Serif',serif;font-size:clamp(14px,1.5vw,22px);letter-spacing:.02em;opacity:.9;color:var(--clock);
+#date{font-family:'Saira',sans-serif;font-weight:400;text-transform:uppercase;font-size:clamp(11px,1.05vw,16px);letter-spacing:.32em;opacity:.85;color:var(--clock);margin-bottom:.4em;
   text-shadow:0 1px 10px rgba(0,0,0,.5);transition:color 1.2s}
-#time{font-family:'Instrument Serif',serif;font-size:clamp(72px,12vw,190px);line-height:.92;color:var(--clock);
+#time{font-family:'Saira',sans-serif;font-weight:200;font-size:clamp(68px,11vw,176px);line-height:.95;letter-spacing:.02em;
+  font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;color:var(--clock);
   text-shadow:0 2px 24px rgba(0,0,0,.45),0 0 30px var(--clockGlow),0 0 90px var(--clockGlow);transition:color 1.2s,text-shadow 1.2s}
 body.noclock #clock{opacity:0}
 #word{position:absolute;left:50%;top:60%;font-family:'Fraunces',serif;font-style:italic;font-weight:800;
@@ -980,6 +981,28 @@ function updateLines(p){
   engine.shown = cur;
 }
 
+const HOT_STARS = 5;            // how many of the newest constellations shine like stars
+/** A soft halo plus four thin light spikes (and two faint diagonal ones) that slowly twinkle. */
+function drawStarGlow(x, y, g, now, seed){
+  const tw = 0.82 + 0.18*Math.sin(now/420 + seed*3);
+  const R = 20 * g * tw, L = 34 * g * tw;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, R);
+  halo.addColorStop(0, rgba(ink.star, 0.85*g)); halo.addColorStop(0.25, rgba(ink.star, 0.3*g)); halo.addColorStop(1, rgba(ink.star, 0));
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI*2); ctx.fill();
+  const spike = (dx, dy, len, w, alpha) => {
+    const gr = ctx.createLinearGradient(x - dx*len, y - dy*len, x + dx*len, y + dy*len);
+    gr.addColorStop(0, rgba(ink.star, 0)); gr.addColorStop(0.5, rgba(ink.star, alpha)); gr.addColorStop(1, rgba(ink.star, 0));
+    ctx.strokeStyle = gr; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(x - dx*len, y - dy*len); ctx.lineTo(x + dx*len, y + dy*len); ctx.stroke();
+  };
+  spike(0, 1, L, 1.5, 1.0*g);               // vertical
+  spike(1, 0, L*0.85, 1.5, 0.95*g);         // horizontal
+  spike(0.7071, 0.7071, L*0.4, 1, 0.45*g);  // faint diagonals
+  spike(0.7071, -0.7071, L*0.4, 1, 0.45*g);
+  ctx.restore();
+}
 function starXY(c, s){
   const u = Math.min(W, H);
   return [c.center.x*W + s.dx*u, c.center.y*H + s.dy*u];
@@ -1001,6 +1024,9 @@ function drawSky(p, now){
   const u = Math.min(W,H);
   const labelSize = clamp(u*0.014, 9, 13);
   let active = null;
+  // the 5 newest constellations shine like real stars (newest brightest); the 6th fades back to plain dots
+  const sdt = clamp((now - (drawSky.lastT || now)) / 1000, 0, 0.1); drawSky.lastT = now;
+  const hot = new Map(live.slice(-HOT_STARS).reverse().map((c, r) => [c, [1, 0.8, 0.65, 0.52, 0.42][r]]));
 
   for (const c of sky){
     const a = c.alpha; if (a < 0.01) continue;
@@ -1025,10 +1051,13 @@ function drawSky(p, now){
       const k = clamp((p - s.t) / 300, 0, 1);
       const [x,y] = starXY(c, s);
       const tw = 0.75 + 0.25*Math.sin(now/600 + s.seed);
+      // ease toward "bright star" while this is one of the newest 5, back to a plain dot after
+      s.glow = (s.glow || 0) + ((hot.get(c) || 0) - (s.glow || 0)) * ease(sdt, 0.5);
+      if (s.glow > 0.02) drawStarGlow(x, y, s.glow * a, now, s.seed);
       ctx.save();
       ctx.shadowColor = accent; ctx.shadowBlur = 10;
       ctx.fillStyle = rgba(ink.star, a*tw);
-      ctx.beginPath(); ctx.arc(x, y, (1.6 + 1.4*k) * (1 + (1-k)*1.5), 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, (1.6 + 1.4*k + s.glow*0.9) * (1 + (1-k)*1.5), 0, Math.PI*2); ctx.fill();
       ctx.restore();
       ctx.fillStyle = rgba(ink.label, 0.8*a*k);
       ctx.fillText(s.text.toLowerCase(), x, y + 7);
