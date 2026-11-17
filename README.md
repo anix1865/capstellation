@@ -30,7 +30,7 @@ This prints exactly what the helper sees: the raw AppleScript answers from Spoti
 
 `desktop/` packages Capstellation as a real app, so there's no Terminal step. It's an Electron window around the same UI, with the helper rewritten in Node (`desktop/server.js`, same endpoints as `capstellation.py`).
 
-| | Now playing | Music audio (visualizer, glitch, Listen) |
+| | Now playing | Music audio (visualizer, glitch) |
 |---|---|---|
 | **macOS** | AppleScript → Spotify / Apple Music | `audiotap.swift` (ScreenCaptureKit, only those apps) |
 | **Windows** | Windows media controls → Spotify, Apple Music, Amazon Music, browsers… | `native/windows` (WASAPI loopback of the speakers, never the mic) |
@@ -98,5 +98,5 @@ Tunables are at the top of the script: `MAX_CAPTIONS`, `MAX_ON_SCREEN`, `FADE_SP
 ## Roadmap: native Mac app
 
 - Wrap the page in a native shell (Swift/WKWebView, Tauri or Electron) so there's no Terminal step.
-- Use **ShazamKit** (Apple's free, on-device song recognition for native apps) in place of AudD for Listen mode, so recognizing any audio source needs no API key.
+- Use **ShazamKit** (Apple's free, on-device song recognition for native apps) to recognize songs from any player by their sound, with no API key.
 - Read Now Playing for every player from the system instead of per-app AppleScript.
