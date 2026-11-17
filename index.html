@@ -72,7 +72,7 @@ body.noclock #clock{opacity:0}
   text-shadow:0 2px 14px rgba(0,0,0,.5),0 0 14px var(--wordGlow1),0 0 40px var(--wordGlow2),0 0 90px var(--wordGlow3);
   transition:left .35s cubic-bezier(.2,.8,.2,1),top .35s cubic-bezier(.2,.8,.2,1),opacity .35s,color 1.2s}
 #word.pop{animation:pop .35s ease-out}
-@keyframes pop{0%{transform:translate(-50%,0) scale(.86);filter:blur(3px)}100%{transform:translate(-50%,0) scale(1);filter:blur(0)}}
+@keyframes pop{0%{transform:translate(-50%,0) scale(.86)}100%{transform:translate(-50%,0) scale(1)}}   /* no blur: words appear crisp */
 
 /* ---------- UI chrome ---------- */
 #ui{position:fixed;inset:0;pointer-events:none;transition:opacity .5s}
