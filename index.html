@@ -354,6 +354,7 @@ function loadTrack({ key, title, artist, lines, duration, art, startAt=0, playin
   engine.trackKey = key;
   engine.duration = duration || (lines.length ? lines[lines.length-1].t + 6000 : 0);
   engine.lines = prepareLines(lines, engine.duration);
+  engine.pastEnd = false;
   engine.posAnchor = startAt; engine.perfAnchor = performance.now(); engine.playing = playing;
   resetSky(true);
   if (typeof resetBeat === 'function') resetBeat();
@@ -1025,6 +1026,12 @@ function enforceCap(){
 
 function updateLines(p){
   const L = engine.lines; if (!L.length) return;
+  // played past the last lyric while the song keeps going: say why the sky is empty
+  const pastEnd = engine.duration > 0 && p > L[L.length-1].t + 8000 && engine.duration - p > 15000;
+  if (pastEnd !== engine.pastEnd){
+    engine.pastEnd = pastEnd;
+    setHint(pastEnd ? 'The lyrics found for this song end here.<br>They may be from a shorter version.' : '');
+  }
   let cur = -1;
   for (let i=0;i<L.length;i++){ if (L[i].t <= p) cur = i; else break; }
   if (cur === engine.shown) return;
@@ -1356,6 +1363,10 @@ function placeholderCover(){
    Lyrics + artwork lookup (LRCLIB, iTunes)
    ========================================================================= */
 /** Album art through the helper, so it always loads and its colors can be read (no CORS issues). */
+/** When the only lyrics found are for a different-length version (single vs album, edit…), say so. */
+const versionNote = (lyrMs, songMs) => (lyrMs && songMs && Math.abs(lyrMs - songMs) > 8000)
+  ? ` · lyrics are from a ${fmtTime(lyrMs)} version of this ${fmtTime(songMs)} song, so they may drift or end early` : '';
+const fmtTime = ms => `${Math.floor(ms/60000)}:${String(Math.floor(ms/1000) % 60).padStart(2, '0')}`;
 const viaHelper = u => (helperUp && /^https:\/\//.test(u || '')) ? 'img?u=' + encodeURIComponent(u) : u;
 async function fetchLyrics({ title, artist, album, durationMs }){
   const q = new URLSearchParams({ track_name: title, artist_name: artist });
@@ -1366,18 +1377,30 @@ async function fetchLyrics({ title, artist, album, durationMs }){
     try{ const j = await (await fetch('lyrics?' + q, { cache:'no-store' })).json(); if (j.ok){ rec = j.rec; asked = true; } else console.warn('helper lyrics:', j.error); }catch{}
   }
   if (!asked){
-    try{ const r = await fetch('https://lrclib.net/api/get?' + q); if (r.ok) rec = await r.json(); }catch{}
-    if (!rec || (!rec.syncedLyrics && !rec.plainLyrics && !rec.instrumental)){
-      try{
-        const r = await fetch('https://lrclib.net/api/search?' + new URLSearchParams({ track_name: title, artist_name: artist }));
-        const list = r.ok ? await r.json() : [];
-        rec = list.find(x => x.syncedLyrics) || list[0] || null;
-      }catch{ return { lines: [], synced: false, failed: true }; }
+    // same rule as the helper: the exact match if it's timed and the right length,
+    // otherwise the synced version whose length is closest to the song that's playing
+    const want = durationMs ? durationMs / 1000 : 0, off = r => want ? Math.abs((r.duration || 0) - want) : 0;
+    const clean = t => String(t || '').replace(/\s*[([](?:with|feat\.?|ft\.?|featuring)\b[^)\]]*[)\]]/gi, '').replace(/\s+-\s+(?:\d{4}\s+)?remaster(?:ed)?\b.*$/i, '').trim();
+    const cands = [];
+    let reached = false;
+    try{
+      const r = await fetch('https://lrclib.net/api/get?' + q); reached = true;
+      if (r.ok){ const g = await r.json(); if (g.instrumental || (g.syncedLyrics && off(g) <= 3)) rec = g; else cands.push(g); }
+    }catch{}
+    if (!rec){
+      for (const params of [{ track_name: title, artist_name: artist }, { track_name: clean(title), artist_name: artist }, { q: `${clean(title)} ${artist}` }]){
+        try{ const r = await fetch('https://lrclib.net/api/search?' + new URLSearchParams(params)); reached = true; if (r.ok) cands.push(...await r.json()); }catch{}
+      }
+      if (!reached) return { lines: [], synced: false, failed: true };
+      const seen = new Set(), uniq = cands.filter(c => c && !seen.has(c.id) && seen.add(c.id));
+      const pool = uniq.some(c => c.syncedLyrics) ? uniq.filter(c => c.syncedLyrics) : uniq;
+      pool.sort((a, b) => off(a) - off(b));
+      rec = pool[0] || null;
     }
   }
   if (!rec) return { lines: [], synced: false };
   if (rec.instrumental) return { lines: [], synced: true, instrumental: true };
-  if (rec.syncedLyrics) return { lines: parseLRC(rec.syncedLyrics), synced: true };
+  if (rec.syncedLyrics) return { lines: parseLRC(rec.syncedLyrics), synced: true, version: rec.duration ? rec.duration * 1000 : 0 };
   if (rec.plainLyrics) return { lines: spreadPlain(rec.plainLyrics, durationMs || rec.duration*1000), synced: false };
   return { lines: [], synced: false };
 }
@@ -1405,7 +1428,7 @@ async function openSong({ key, title, artist, album, durationMs, art, posMs=0, p
   loadTrack({ key, title, artist, lines: lyr.lines, duration: durationMs, art: viaHelper(art || itunesArt) || albumURL, startAt: posMs + (playing ? elapsed : 0), playing });
   setStatus(lyr.instrumental ? 'Instrumental — no lyrics.' : lyr.failed ? 'Couldn’t reach the lyrics service (lrclib.net).' :
             !lyr.lines.length ? 'No lyrics found for this song.' :
-            lyr.synced ? `${title} — ${artist}` : 'Only unsynced lyrics found; timing is estimated.');
+            lyr.synced ? `${title} — ${artist}` + versionNote(lyr.version, durationMs) : 'Only unsynced lyrics found; timing is estimated.');
   const t = esc(title);
   setHint(lyr.instrumental ? `“${t}” is instrumental` : lyr.failed ? 'Couldn’t reach the lyrics service (lrclib.net)' :
           !lyr.lines.length ? `No synced lyrics found for “${t}”` : '');

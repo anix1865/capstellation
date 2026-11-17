@@ -24,6 +24,7 @@ import collections
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -347,21 +348,52 @@ def net_error(e):
     return f"{e}{hint}"
 
 
+def clean_title(t):
+    """'Song (feat. X) [with Y] - 2011 Remaster' -> 'Song' (lyric sites often store the plain title)."""
+    t = re.sub(r"\s*[\(\[](?:with|feat\.?|ft\.?|featuring)\b[^\)\]]*[\)\]]", "", t or "", flags=re.I)
+    t = re.sub(r"\s+-\s+(?:\d{4}\s+)?remaster(?:ed)?\b.*$", "", t, flags=re.I)
+    return t.strip()
+
+
 def lookup_lyrics(q):
-    """LRCLIB exact match first, then a search; returns the best record or None."""
-    params = {k: v for k, v in q.items() if v}
+    """Best LRCLIB record for this exact recording, or None.
+
+    Songs often exist in several versions (single, album, edit) with different lengths and lyrics.
+    Picking the wrong one means the lyrics drift or stop early, so: try the exact match, then gather
+    candidates from a few searches and choose the synced version whose length is closest to ours.
+    """
+    want = float(q.get("duration") or 0)
+    album = (q.get("album_name") or "").lower()
+    off = lambda r: abs(float(r.get("duration") or 0) - want) if want else 0.0
+    cands = []
     try:
-        body, _ = http_get("https://lrclib.net/api/get?" + urllib.parse.urlencode(params))
+        body, _ = http_get("https://lrclib.net/api/get?" + urllib.parse.urlencode({k: v for k, v in q.items() if v}))
         rec = json.loads(body)
-        if rec.get("syncedLyrics") or rec.get("plainLyrics") or rec.get("instrumental"):
-            return rec
+        if rec.get("instrumental") or (rec.get("syncedLyrics") and off(rec) <= 3):
+            return rec                                   # exact match with timed lyrics: done
+        cands.append(rec)
     except urllib.error.HTTPError as e:
         if e.code != 404:
             raise
-    body, _ = http_get("https://lrclib.net/api/search?" + urllib.parse.urlencode(
-        {"track_name": q.get("track_name", ""), "artist_name": q.get("artist_name", "")}))
-    lst = json.loads(body) or []
-    return next((x for x in lst if x.get("syncedLyrics")), lst[0] if lst else None)
+    title, artist = q.get("track_name", ""), q.get("artist_name", "")
+    for params in ({"track_name": title, "artist_name": artist},
+                   {"track_name": clean_title(title), "artist_name": artist},
+                   {"q": f"{clean_title(title)} {artist}"}):
+        if params.get("track_name", params.get("q", "")).strip():
+            try:
+                body, _ = http_get("https://lrclib.net/api/search?" + urllib.parse.urlencode(params))
+                cands += json.loads(body) or []
+            except urllib.error.HTTPError:
+                pass
+    seen, uniq = set(), []
+    for c in cands:
+        if c.get("id") not in seen:
+            seen.add(c.get("id")); uniq.append(c)
+    pool = [c for c in uniq if c.get("syncedLyrics")] or uniq
+    if not pool:
+        return None
+    pool.sort(key=lambda r: (off(r), (r.get("albumName") or "").lower() != album))
+    return pool[0]
 
 
 IMG_HOSTS = ("scdn.co", "spotifycdn.com", "mzstatic.com", "audd.tech", "audd.io")
@@ -528,7 +560,12 @@ def check():
                 print("  no lyrics found for this song")
             else:
                 synced = rec.get("syncedLyrics") or ""
-                print(f"  found: synced lines={synced.count(chr(10)) + 1 if synced else 0}, "
+                stamps = re.findall(r"\[(\d+):(\d+(?:\.\d+)?)\]", synced)
+                last = f"{int(stamps[-1][0])}:{float(stamps[-1][1]):05.2f}" if stamps else "-"
+                print(f"  picked: {rec.get('trackName')!r} by {rec.get('artistName')!r} ({rec.get('albumName')!r}), "
+                      f"length {int(rec.get('duration') or 0)//60}:{int(rec.get('duration') or 0)%60:02d} "
+                      f"vs this song {now['duration_ms']//60000}:{now['duration_ms']//1000%60:02d}")
+                print(f"  synced lines={synced.count(chr(10)) + 1 if synced else 0}, last timed line at {last}, "
                       f"plain={'yes' if rec.get('plainLyrics') else 'no'}, instrumental={rec.get('instrumental')}")
         except Exception as e:  # noqa: BLE001
             print("  lookup failed:", net_error(e))

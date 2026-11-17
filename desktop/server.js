@@ -237,14 +237,32 @@ function createServer({ root, tap }){
   const get = (url, opt = {}) => fetch(url, { ...opt, headers: { 'User-Agent': UA, ...(opt.headers || {}) } });
   const readBody = req => new Promise((ok, bad) => { const c = []; req.on('data', d => c.push(d)); req.on('end', () => ok(Buffer.concat(c))); req.on('error', bad); });
 
+  /** 'Song (feat. X) [with Y] - 2011 Remaster' -> 'Song' (lyric sites often store the plain title). */
+  const cleanTitle = t => String(t || '').replace(/\s*[([](?:with|feat\.?|ft\.?|featuring)\b[^)\]]*[)\]]/gi, '')
+                                         .replace(/\s+-\s+(?:\d{4}\s+)?remaster(?:ed)?\b.*$/i, '').trim();
+  /**
+   * Best LRCLIB record for this exact recording. Songs often exist in several versions (single,
+   * album, edit) with different lengths and lyrics; the wrong one drifts or stops early. So: the
+   * exact match if it's timed and the right length, otherwise the synced version closest in length.
+   */
   async function lyrics(q){
-    const params = new URLSearchParams(Object.entries(q).filter(([, v]) => v));
-    const r = await get('https://lrclib.net/api/get?' + params);
-    if (r.ok){ const rec = await r.json(); if (rec.syncedLyrics || rec.plainLyrics || rec.instrumental) return rec; }
-    else if (r.status !== 404) throw new Error(`lrclib ${r.status}`);
-    const s = await get('https://lrclib.net/api/search?' + new URLSearchParams({ track_name: q.track_name || '', artist_name: q.artist_name || '' }));
-    const list = s.ok ? await s.json() : [];
-    return list.find(x => x.syncedLyrics) || list[0] || null;
+    const want = Number(q.duration) || 0, album = String(q.album_name || '').toLowerCase();
+    const off = r => want ? Math.abs((Number(r.duration) || 0) - want) : 0;
+    const cands = [];
+    const r = await get('https://lrclib.net/api/get?' + new URLSearchParams(Object.entries(q).filter(([, v]) => v)));
+    if (r.ok){
+      const rec = await r.json();
+      if (rec.instrumental || (rec.syncedLyrics && off(rec) <= 3)) return rec;
+      cands.push(rec);
+    } else if (r.status !== 404) throw new Error(`lrclib ${r.status}`);
+    const title = q.track_name || '', artist = q.artist_name || '';
+    for (const params of [{ track_name: title, artist_name: artist }, { track_name: cleanTitle(title), artist_name: artist }, { q: `${cleanTitle(title)} ${artist}` }]){
+      try{ const s = await get('https://lrclib.net/api/search?' + new URLSearchParams(params)); if (s.ok) cands.push(...await s.json()); }catch{}
+    }
+    const seen = new Set(), uniq = cands.filter(c => c && !seen.has(c.id) && seen.add(c.id));
+    const pool = uniq.filter(c => c.syncedLyrics).length ? uniq.filter(c => c.syncedLyrics) : uniq;
+    pool.sort((a, b) => off(a) - off(b) || ((a.albumName || '').toLowerCase() !== album) - ((b.albumName || '').toLowerCase() !== album));
+    return pool[0] || null;
   }
 
   async function recognize(token, seconds){
