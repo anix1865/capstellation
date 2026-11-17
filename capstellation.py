@@ -324,7 +324,7 @@ class AudioTap:
 
     def info(self):
         return {"available": self.fresh() or (self.status == "running" and self.error is None),
-                "hearing": self.fresh(), "status": self.status, "error": self.error}
+                "hearing": self.fresh(), "status": self.status, "error": self.error, "platform": "mac"}
 
 
 TAP = AudioTap()

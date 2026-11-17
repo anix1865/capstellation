@@ -1,0 +1,43 @@
+{
+  "name": "capstellation",
+  "productName": "Capstellation",
+  "version": "0.1.0",
+  "description": "Full-screen lyrics as constellations, over your album art.",
+  "author": "Aniruddha Anuprash",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "serve": "node server.js",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "io.github.anix1865.capstellation",
+    "productName": "Capstellation",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "server.js", "package.json"],
+    "extraResources": [
+      { "from": "../index.html", "to": "web/index.html" },
+      { "from": "native-bin/${os}", "to": "native", "filter": ["**/*"] }
+    ],
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "category": "public.app-category.music",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Capstellation asks Spotify or Apple Music what's playing so it can show the lyrics in time.",
+        "NSAudioCaptureUsageDescription": "Capstellation listens to the music that's playing to drive the visualizer.",
+        "NSMicrophoneUsageDescription": "Only used if you choose Listen → Mic to identify a song."
+      }
+    },
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "artifactName": "Capstellation-Setup-${version}.${ext}" }
+  }
+}

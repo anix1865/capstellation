@@ -3,3 +3,8 @@ node_modules/
 __pycache__/
 *.pyc
 .build/
+desktop/node_modules/
+desktop/dist/
+desktop/native-bin/
+native/windows/bin/
+native/windows/obj/

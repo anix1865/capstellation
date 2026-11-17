@@ -1,0 +1,70 @@
+name: Desktop app
+
+# Builds Capstellation for macOS (.dmg, Apple Silicon + Intel) and Windows (installer).
+# Download the results from the run's "Artifacts" section.
+on:
+  push:
+    branches: [main]
+    paths: ['index.html', 'audiotap.swift', 'desktop/**', 'native/**', '.github/workflows/desktop.yml']
+  workflow_dispatch: {}
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the system-audio tap (universal)
+        run: |
+          mkdir -p desktop/native-bin/mac build
+          swiftc -O -target arm64-apple-macos13  audiotap.swift -o build/audiotap-arm64
+          swiftc -O -target x86_64-apple-macos13 audiotap.swift -o build/audiotap-x64
+          lipo -create build/audiotap-arm64 build/audiotap-x64 -output desktop/native-bin/mac/audiotap
+          codesign --force --sign - desktop/native-bin/mac/audiotap
+          lipo -info desktop/native-bin/mac/audiotap
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Install
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Package
+        working-directory: desktop
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+        run: npx electron-builder --mac --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Capstellation-macOS
+          path: desktop/dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+
+      - name: Build the Windows helper
+        run: dotnet publish native/windows -c Release -o desktop/native-bin/win
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Install
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Package
+        working-directory: desktop
+        run: npx electron-builder --win --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Capstellation-Windows
+          path: desktop/dist/*.exe
+          if-no-files-found: error

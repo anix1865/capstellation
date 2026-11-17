@@ -26,6 +26,31 @@ python3 capstellation.py --check
 
 This prints exactly what the helper sees: the raw AppleScript answers from Spotify/Music, what the app receives, whether lyrics were found, and whether the system audio is working. While the helper runs, its Terminal window also logs each new song and any error. The app shows a short message in the middle of the screen whenever it has nothing to draw, explaining why.
 
+## Desktop app (macOS + Windows), in progress
+
+`desktop/` packages Capstellation as a real app, so there's no Terminal step. It's an Electron window around the same UI, with the helper rewritten in Node (`desktop/server.js`, same endpoints as `capstellation.py`).
+
+| | Now playing | Music audio (visualizer, glitch, Listen) |
+|---|---|---|
+| **macOS** | AppleScript → Spotify / Apple Music | `audiotap.swift` (ScreenCaptureKit, only those apps) |
+| **Windows** | Windows media controls → Spotify, Apple Music, Amazon Music, browsers… | `native/windows` (WASAPI loopback of the speakers, never the mic) |
+
+**Run it from source on your Mac:**
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+The first launch builds the audio tap. macOS asks for Automation and Screen & System Audio Recording permissions, this time for the app itself.
+
+**Installers:** every push to `main` runs the *Desktop app* workflow (GitHub → Actions), which builds a macOS `.dmg` (Apple Silicon + Intel) and a Windows `Setup.exe`. Download them from the run's *Artifacts*. The builds aren't signed with a developer certificate yet, so the first time you open them:
+- **macOS:** right-click the app → **Open**. If it says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Capstellation.app`.
+- **Windows:** SmartScreen → **More info → Run anyway**.
+
+**Build the Windows helper yourself** (needs the .NET 8 SDK): `dotnet publish native/windows -c Release -o desktop/native-bin/win`, then `npm run dist:win` in `desktop/`.
+
 ## Keys
 
 | Key | Action |
