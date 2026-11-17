@@ -78,7 +78,7 @@ sealed class Analyzer
             if (pcm.Count > 0)
             {
                 var bytes = new byte[pcm.Count * 2];
-                Buffer.BlockCopy(pcm.ToArray(), 0, bytes, 0, bytes.Length);
+                System.Buffer.BlockCopy(pcm.ToArray(), 0, bytes, 0, bytes.Length);
                 Out.Line("P " + Convert.ToBase64String(bytes));
                 pcm.Clear();
             }
