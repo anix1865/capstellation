@@ -39,14 +39,14 @@ Lyrics come from **lrclib.net** (free, no key). Covers come from Spotify, or the
 ## Background
 
 - **Album art:** an asymmetrical **collage** of the cover: one big copy leaning to one side, a staggered column of medium copies on the other, small zoomed-in fragments and thin strips. Each song gets its own layout; **Shuffle layout** makes a new one. It's blurred, with three sharp spots drifting across it. Untick **Collage** for the plain cover.
-- **Glitch effect:** short bursts of torn scanlines and neon pixel blocks, with a red/cyan split on the clock and sung word. When the app can hear the music, bursts land on the kick drum; otherwise they come every few seconds.
+- **Glitch effect:** torn scanlines and neon pixel blocks, with a red/cyan split on the clock and sung word. When the app can hear the music (mic, shared tab or BlackHole), it follows the bass. Each kick triggers a burst, and its size depends on how loud that part of the song is *compared with the rest of the song*: quiet verses give small flickers, the loudest parts give heavy tearing plus a constant crackle, and the moment a drop hits gets one big 0.7 s burst. The app learns a song's quiet and loud range as it plays, so the first minute is its best guess. Without audio, gentle bursts come at random.
 - **My image:** pick one image (or drag it onto the screen). It shows sharp by default; tick **Blur** for the same blur + drifting-spots treatment. The image is remembered in this browser.
 
 The clock, sung word, star labels and lines take their color from whatever background is showing. They use the image's own hue at a lightness that keeps them readable. If an image is too bright for light text, it gets a dark shade, but only as much as needed. The visualizer uses the complementary color.
 
 ## Visualizer
 
-A slim mirrored bar visualizer sits at the bottom center, and constellations keep clear of it. Browsers can't capture the Spotify/Music *desktop* apps' sound directly, so:
+A slim mirrored bar visualizer sits at the bottom center, in the same colors as the clock and sung word: a horizontal gradient from the vivid word color (bass, center) to the softer clock color (edges), with brighter tips. Constellations keep just clear of it. Browsers can't capture the Spotify/Music *desktop* apps' sound directly, so:
 
 - **Use mic** (Mac and Spotify modes): listens through your microphone, with automatic gain so quiet speakers still move the bars. The choice is remembered, and the mic reconnects automatically next time.
 - **Share tab:** if the music plays in a browser tab (e.g. the Spotify web player), share that tab's audio.

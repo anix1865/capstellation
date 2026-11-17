@@ -312,6 +312,7 @@ function loadTrack({ key, title, artist, lines, duration, art, startAt=0, playin
   engine.lines = prepareLines(lines, engine.duration);
   engine.posAnchor = startAt; engine.perfAnchor = performance.now(); engine.playing = playing;
   resetSky(true);
+  if (typeof resetBeat === 'function') resetBeat();
   $('#npTitle').textContent = title || '';
   $('#npArtist').textContent = artist || '';
   $('#nowplaying').classList.toggle('on', !!title);
@@ -473,12 +474,17 @@ function readable(h, s, bgL, target){
   return 97;
 }
 
-/** Visualizer colors: the complement of the background's main color, spread a little either side. */
-let visColors = ['hsl(202,80%,62%)', 'hsl(172,75%,58%)', 'hsl(232,78%,66%)'];
-function setVisPalette(h, s){
-  s = clamp(s, 55, 90);
-  const c = (h + 180) % 360;
-  visColors = [`hsl(${c},${s}%,62%)`, `hsl(${(c+330)%360},${s}%,58%)`, `hsl(${(c+30)%360},${s}%,66%)`];
+/** Visualizer colors follow the clock and sung word: vivid word color in the middle (the bass),
+    fading to the softer clock color at the edges, with the hue drifting a little across. */
+let visColors = { mid:'#ffd23f', edgeL:'#ffd6bd', edgeR:'#ffd6bd', top:'rgba(255,255,255,.55)', glow:'rgba(255,160,40,.6)' };
+function setVisPalette(h, sWord, lWord, sClock, lClock){
+  visColors = {
+    mid:   `hsl(${h},${sWord}%,${lWord}%)`,
+    edgeL: `hsl(${(h+342)%360},${Math.max(sClock, sWord*0.7)}%,${lClock}%)`,
+    edgeR: `hsl(${(h+18)%360},${Math.max(sClock, sWord*0.7)}%,${lClock}%)`,
+    top:   `hsla(${h},${Math.min(100, sWord+10)}%,92%,.75)`,
+    glow:  `hsla(${h},${sWord}%,55%,.7)`,
+  };
 }
 
 /** Canvas colors for stars, labels, lines, crosshair (updated with the text colors). */
@@ -504,6 +510,7 @@ function setTextColors(h, s, bgL){
   const lClock = readable(h, sClock, effL, 4.5);                // big clock text: comfortably readable
   const lWord  = readable(h, sWord, effL, 3.6);                 // the sung word is huge + glowing, so it can be more colorful
   root.setProperty('--clock', `hsl(${h},${sClock}%,${Math.max(lClock, 80)}%)`);
+  setVisPalette(h, sWord, Math.max(lWord, 64), sClock, Math.max(lClock, 80));
   root.setProperty('--clockGlow', `hsla(${h},${grey ? 0 : clamp(s,40,90)}%,50%,.45)`);
   root.setProperty('--word', `hsl(${h},${sWord}%,${Math.max(lWord, 64)}%)`);
   root.setProperty('--wordGlow1', `hsla(${h},${sWord}%,62%,.85)`);
@@ -539,7 +546,6 @@ function analyzeCanvas(src, blurred){
     let [h, s] = rgbToHsl(...best);
     if (bestScore < 40) s = 0;                                  // nothing colorful in the image
     setTextColors(Math.round(h), Math.round(s), bgL);
-    setVisPalette(Math.round(h), Math.round(s));
     glitchHue = Math.round(h);
   }catch{ /* image not readable (CORS): keep the current colors */ }
 }
@@ -614,42 +620,62 @@ function animateMask(now){
    ========================================================================= */
 const gcv = $('#glitch'), gctx = gcv.getContext('2d');
 let glitchHue = 20;
-const gl = { until: 0, next: 0, cool: 0, lastDraw: 0, bassAvg: 0 };
-function startBurst(now){ gl.until = now + rand(90, 280); }
+const gl = { until: 0, amt: 0, next: 0, cool: 0, dropCool: 0, dropArmed: true, lastDraw: 0, secLow: 0, ambient: 0 };
+/** amt 0–1 = how violent this burst is. A stronger burst arriving mid-burst takes over. */
+function startBurst(now, amt, dur){
+  if (now < gl.until && amt < gl.amt) return;
+  gl.amt = amt;
+  gl.until = now + (dur || 50 + amt*330);
+}
 function drawGlitch(now){
   if (!bg.glitch) return;
   const gw = Math.ceil(W/5), gh = Math.ceil(H/5);
   if (gcv.width !== gw || gcv.height !== gh){ gcv.width = gw; gcv.height = gh; }
 
-  // trigger: kick drum if we can hear the music, otherwise a loose random rhythm
-  const L = vis.levels, haveAudio = !!currentAnalyser();
-  if (haveAudio){
-    const bass = (L[0] + L[1] + L[2] + L[3]) / 4;
-    gl.bassAvg = gl.bassAvg*0.96 + bass*0.04;
-    if (bass > gl.bassAvg*1.35 + 0.06 && now > gl.cool){ startBurst(now); gl.cool = now + rand(450, 1500); }
-  } else if (now > gl.next){ startBurst(now); gl.next = now + rand(1200, 3800); }
+  if (beat.live){
+    // How big a glitch a kick gets depends on where we are in the song:
+    //  quiet verse (loud ≈ 0) → small flickers;  chorus → medium;  drop (loud ≈ 1) → heavy tearing
+    if (beat.kick && now > gl.cool){
+      const amt = clamp(0.04 + beat.loud * 0.85 + (beat.kickSize - 1) * 0.06, 0, 1);
+      if (amt > 0.1){ startBurst(now, amt); gl.cool = now + 110; }
+    }
+    // the drop itself: loudness leaps from a quiet stretch to near the song's peak → one huge burst
+    const gdt = clamp((now - (gl.lastT || now)) / 1000, 0, 0.1); gl.lastT = now;
+    gl.secLow = Math.min(beat.loud, gl.secLow + 0.12 * gdt);     // the low point of the last several seconds
+    const sectionUp = beat.loud > 0.72 && beat.loud - gl.secLow > 0.45;   // the whole section has climbed
+    if (beat.loud < 0.45) gl.dropArmed = true;                        // re-arm only after things calm down again
+    if (gl.dropArmed && (beat.bigHit || sectionUp) && now > gl.dropCool){
+      startBurst(now, 1, 700); gl.dropCool = now + 4000; gl.dropArmed = false;
+    }
+    // constant crackle while the loudest part lasts
+    gl.ambient = clamp((beat.loud - 0.6) * 1.4, 0, 0.55);
+  } else {
+    // no audio to follow: gentle random bursts so the effect is still visible
+    if (now > gl.next){ startBurst(now, rand(0.2, 0.55)); gl.next = now + rand(1200, 3800); }
+    gl.ambient = 0;
+  }
 
-  const burst = now < gl.until;
-  document.body.classList.toggle('glitching', burst);
+  const burst = now < gl.until, amt = burst ? gl.amt : 0;
+  document.body.classList.toggle('glitching', burst && amt > 0.3);
   if (now - gl.lastDraw < 45) return;            // re-randomize ~20×/s for a choppy flicker
   gl.lastDraw = now;
   gctx.clearRect(0, 0, gw, gh);
   if (!burst){
-    if (Math.random() < 0.25) drawBlocks(gw, gh, 1 + (Math.random()*2|0), 0.35);   // faint leftovers between bursts
+    const chance = 0.18 + gl.ambient;            // leftovers between bursts, more during loud sections
+    if (Math.random() < chance) drawBlocks(gw, gh, 1 + Math.round(gl.ambient*6 + Math.random()*2), 0.3 + gl.ambient*0.5);
     return;
   }
-  document.documentElement.style.setProperty('--gx', `${rand(-6, 6).toFixed(1)}px`);
-  // torn scanlines: horizontal slices of the background, shoved sideways
+  document.documentElement.style.setProperty('--gx', `${(rand(-1, 1) * (1.5 + amt*9)).toFixed(1)}px`);
+  // torn scanlines: more, thicker and shoved further the harder the bass hits
   if (bgSrcCanvas){
     const sw = bgSrcCanvas.width, sh = bgSrcCanvas.height, sharp = document.body.classList.contains('sharpbg');
-    const n = 3 + (Math.random()*7|0);
+    const n = Math.round(1 + amt*12 + Math.random()*3);
     for (let i=0;i<n;i++){
-      // a partial-width sliver of the background, shoved sideways
-      const y = Math.random()*gh, hh = 1 + Math.random()*gh*0.03, shift = rand(-1, 1)*gw*0.12;
-      const x0 = Math.random()*gw*0.6, xw = gw*rand(0.15, 0.6);
+      const y = Math.random()*gh, hh = 1 + Math.random()*gh*(0.01 + amt*0.045), shift = rand(-1, 1)*gw*(0.03 + amt*0.17);
+      const x0 = Math.random()*gw*0.6, xw = gw*rand(0.15, 0.35 + amt*0.5);
       const fx = sharp ? x0/gw : (x0/gw + 0.08)/1.16, fw = sharp ? xw/gw : xw/gw/1.16;
       const fy = sharp ? y/gh : (y/gh + 0.08)/1.16, fh = sharp ? hh/gh : hh/gh/1.16;
-      gctx.globalAlpha = rand(0.6, 0.9);
+      gctx.globalAlpha = rand(0.55, 0.9);
       gctx.drawImage(bgSrcCanvas, fx*sw, fy*sh, fw*sw, fh*sh, x0 + shift, y, xw, hh);
       gctx.globalCompositeOperation = 'screen';
       gctx.fillStyle = Math.random() < 0.5 ? 'rgba(255,0,80,.35)' : 'rgba(0,220,255,.35)';
@@ -658,7 +684,7 @@ function drawGlitch(now){
     }
     gctx.globalAlpha = 1;
   }
-  drawBlocks(gw, gh, 10 + (Math.random()*16|0), 1);
+  drawBlocks(gw, gh, Math.round(3 + amt*32 + Math.random()*4), 0.6 + amt*0.4);
 }
 /** Neon pixel blocks: short rainbow-segmented bars, mostly in the song's hue, its complement and pure RGB. */
 function drawBlocks(gw, gh, n, alpha){
@@ -703,7 +729,7 @@ function resetSky(hard=false){
 function pickCenter(){
   const recent = sky.filter(c=>!c.dying).slice(-5).map(c=>c.center);
   const top = document.body.classList.contains('noclock') ? 0.3 : 0.44;
-  const bottom = document.body.classList.contains('novis') ? 0.82 : 0.74;
+  const bottom = document.body.classList.contains('novis') ? 0.82 : 0.8;
   let best = null, bestScore = -Infinity;
   for (let k=0;k<14;k++){
     const c = { x: rand(0.17, 0.83), y: rand(top, bottom) };
@@ -757,7 +783,7 @@ function addConstellation(line){
 function visZone(){
   if (document.body.classList.contains('novis')) return null;
   const vw = Math.min(W*0.44, 620), vh = clamp(H*0.06, 36, 64);
-  return { x0: W/2 - vw/2 - 50, x1: W/2 + vw/2 + 50, y0: H - (H*0.022 + 44) - vh - 40 };
+  return { x0: W/2 - vw/2 - 16, x1: W/2 + vw/2 + 16, y0: H - (H*0.022 + 44) - vh - 10 };
 }
 /** Slide a new constellation so no star (or its label) sits on the visualizer or off-screen. */
 function fitConstellation(c){
@@ -765,7 +791,7 @@ function fitConstellation(c){
   let up = 0, minX = Infinity, maxX = -Infinity;
   for (const s of c.stars){
     const [x, y] = starXY(c, s);
-    const bottom = y + 24;                                    // star + its little label
+    const bottom = y + 20;                                    // star + its little label
     if (z && x > z.x0 && x < z.x1) up = Math.max(up, bottom - z.y0);
     up = Math.max(up, bottom - (H - 20));
     minX = Math.min(minX, x); maxX = Math.max(maxX, x);
@@ -935,7 +961,7 @@ async function connectVisAudio(useMic, quiet=false){
   vis.stream = new MediaStream(stream.getAudioTracks());
   vis.ac = new (window.AudioContext || window.webkitAudioContext)();
   vis.ac.resume?.();
-  vis.analyser = vis.ac.createAnalyser(); vis.analyser.fftSize = 2048; vis.analyser.smoothingTimeConstant = 0.78;
+  vis.analyser = vis.ac.createAnalyser(); vis.analyser.fftSize = 2048; vis.analyser.smoothingTimeConstant = 0.45;
   vis.analyser.minDecibels = -95; vis.analyser.maxDecibels = -25;
   vis.ac.createMediaStreamSource(vis.stream).connect(vis.analyser);
   vis.src = useMic ? 'mic' : 'tab';
@@ -962,15 +988,54 @@ function toggleVis(){ document.body.classList.toggle('novis'); store.set('novis'
 $('#btnVis').onclick = toggleVis;
 if (store.get('novis')) document.body.classList.add('novis');
 
+/**
+ * Beat tracking from the bass (35–150 Hz), in real amplitude rather than dB.
+ *  mid   = bass loudness over the last ~1.5 s (spans several beats, so single kicks don't count as 'loud')
+ *  fast  = bass loudness over the last ~0.1 s (used to spot kicks)
+ *  floor / peak = the quietest and loudest stretches of this song so far (slowly forgetting)
+ *  loud  = where "mid" sits between them: 0 = the song's quietest part, 1 = its loudest (the drop)
+ *  kick  = a sudden jump in bass (kick drum / 808), kickSize = how big that jump is
+ */
+const beat = { live:false, mid:0, fast:0, floor:0, peak:0, hitPeak:0, loud:0, kick:false, kickSize:0, bigHit:false, armed:true, age:0, lastT:0 };
+function resetBeat(){ beat.live = false; }
+const ease = (dt, tau) => 1 - Math.exp(-dt / tau);       // time-based smoothing: same on 60 Hz and 120 Hz screens
+function trackBass(an, buf, now){
+  const nyq = (an.context.sampleRate || 48000) / 2, n = buf.length;
+  const lo = Math.max(1, Math.floor(35/nyq*n)), hi = Math.max(lo+1, Math.ceil(150/nyq*n));
+  const range = an.maxDecibels - an.minDecibels;
+  let sum = 0;
+  for (let k=lo;k<hi;k++) sum += Math.pow(10, (an.minDecibels + buf[k]/255*range) / 20);   // dB → amplitude
+  const b = sum / (hi - lo) * 1000;
+  if (!beat.live){ Object.assign(beat, { live:true, mid:b, fast:b, floor:b, peak:b, hitPeak:b, age:0, lastT:now, armed:true }); }
+  const dt = clamp((now - beat.lastT) / 1000, 0, 0.1); beat.lastT = now; beat.age += dt;
+  const warm = beat.age < 2.5;                            // first moments: learn the song quickly, don't fire
+  beat.mid  += (b - beat.mid)  * ease(dt, warm ? 0.3 : 1.5);
+  beat.fast += (b - beat.fast) * ease(dt, 0.04);
+  // the floor drops right away but creeps up slowly (~20 s); the peak jumps up right away and fades over ~1 min
+  beat.floor = beat.mid < beat.floor ? beat.mid : beat.floor + (beat.mid - beat.floor) * ease(dt, warm ? 0.3 : 20);
+  beat.peak  = warm ? beat.mid : (beat.mid > beat.peak ? beat.mid : beat.peak + (beat.mid - beat.peak) * ease(dt, 60));
+  const span = Math.max(beat.peak - beat.floor, beat.peak * 0.6, 1e-4);
+  beat.loud = clamp((beat.mid - beat.floor) / span, 0, 1);
+  // kick = the bass shooting well above its recent level; re-arms once it falls back
+  beat.kick = false; beat.bigHit = false;
+  if (beat.fast < beat.mid * 1.1) beat.armed = true;
+  else if (beat.armed && beat.fast > beat.mid * 1.35 && !warm){
+    beat.kick = true; beat.armed = false; beat.kickSize = beat.fast / Math.max(beat.mid, 1e-4);
+    beat.bigHit = beat.age > 5 && beat.fast > beat.hitPeak * 1.5;   // far bigger than any hit in the last ~20 s
+  }
+  // loudest recent hit: jumps up at once, fades over ~20 s
+  beat.hitPeak = beat.fast > beat.hitPeak ? beat.fast : beat.hitPeak + (beat.fast - beat.hitPeak) * ease(dt, 20);
+}
+
 function drawVis(now){
-  if (document.body.classList.contains('novis')) return;
-  if (vcv.width !== Math.round(vcv.getBoundingClientRect().width*DPR)) visResize();
-  const w = vcv.width, h = vcv.height, L = vis.levels;
+  const L = vis.levels;
   const an = currentAnalyser();
   const targets = new Float32Array(VIS_BARS);
+  if (!an) beat.live = false;
   if (an){
     if (!vis.buf || vis.buf.length !== an.frequencyBinCount) vis.buf = new Uint8Array(an.frequencyBinCount);
     an.getByteFrequencyData(vis.buf);
+    trackBass(an, vis.buf, now);
     const nyq = (an.context.sampleRate || 48000) / 2, n = vis.buf.length;
     for (let i=0;i<VIS_BARS;i++){                       // log-spaced bands, 45 Hz → 11 kHz
       const f0 = 45 * Math.pow(11000/45, i/VIS_BARS), f1 = 45 * Math.pow(11000/45, (i+1)/VIS_BARS);
@@ -984,13 +1049,16 @@ function drawVis(now){
     for (let i=0;i<VIS_BARS;i++) targets[i] = Math.min(1, targets[i] / vis.peak * 0.9);
   }
   for (let i=0;i<VIS_BARS;i++){ const tg = targets[i]; L[i] += (tg - L[i]) * (tg > L[i] ? 0.55 : 0.14); }
+  if (document.body.classList.contains('novis')) return;
+  if (vcv.width !== Math.round(vcv.getBoundingClientRect().width*DPR)) visResize();
+  const w = vcv.width, h = vcv.height;
 
   vctx.clearRect(0,0,w,h);
   const total = VIS_BARS*2, gap = w/total*0.38, bw = w/total - gap;
   const grad = vctx.createLinearGradient(0,0,w,0);
-  grad.addColorStop(0, visColors[1]); grad.addColorStop(0.5, visColors[0]); grad.addColorStop(1, visColors[2]);
+  grad.addColorStop(0, visColors.edgeL); grad.addColorStop(0.5, visColors.mid); grad.addColorStop(1, visColors.edgeR);
   vctx.fillStyle = grad;
-  vctx.shadowColor = visColors[0]; vctx.shadowBlur = 10*DPR;
+  vctx.shadowColor = visColors.glow; vctx.shadowBlur = 10*DPR;
   for (let j=0;j<total;j++){
     const i = j < VIS_BARS ? VIS_BARS-1-j : j-VIS_BARS;   // lows in the middle, highs at the edges
     const edgeFade = 1 - Math.pow(Math.abs(j - total/2 + 0.5)/(total/2), 2.2);
@@ -1000,6 +1068,12 @@ function drawVis(now){
     vctx.beginPath(); vctx.roundRect ? vctx.roundRect(x, y, bw, bh, bw/2) : vctx.rect(x, y, bw, bh); vctx.fill();
   }
   vctx.globalAlpha = 1; vctx.shadowBlur = 0;
+  // second gradient, vertical: the tips of the bars glow brighter than their bases
+  vctx.globalCompositeOperation = 'source-atop';
+  const vg = vctx.createLinearGradient(0, 0, 0, h);
+  vg.addColorStop(0, visColors.top); vg.addColorStop(0.55, 'rgba(255,255,255,0)'); vg.addColorStop(1, 'rgba(0,0,0,.25)');
+  vctx.fillStyle = vg; vctx.fillRect(0, 0, w, h);
+  vctx.globalCompositeOperation = 'source-over';
 }
 
 /* =========================================================================
@@ -1207,7 +1281,8 @@ async function startListening(useMic){
   listen.stream = new MediaStream(stream.getAudioTracks());
   const ac = new (window.AudioContext || window.webkitAudioContext)();
   const src = ac.createMediaStreamSource(listen.stream);
-  listen.analyser = ac.createAnalyser(); listen.analyser.fftSize = 1024; src.connect(listen.analyser);
+  listen.analyser = ac.createAnalyser(); listen.analyser.fftSize = 2048; listen.analyser.smoothingTimeConstant = 0.45;
+  listen.analyser.minDecibels = -95; listen.analyser.maxDecibels = -25; src.connect(listen.analyser);
   listen.ac = ac; listen.running = true; listen.src = useMic ? 'mic' : 'share'; listen.matched = false;
   if (useMic) listMics();
   listen.stream.getAudioTracks()[0].addEventListener('ended', () => { stopListening(); setStatus('Audio sharing stopped.'); });
