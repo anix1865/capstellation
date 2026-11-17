@@ -53,51 +53,51 @@ SCRIPTS = {
     "spotify": f'''
 if application "Spotify" is running then
   tell application "Spotify"
-    set st to player state as text
-    if st is "stopped" then return "stopped"
+    set playerState to player state as text
+    if playerState is "stopped" then return "stopped"
     set t to current track
-    set nm to name of t
-    set ar to artist of t
-    set al to album of t
-    set du to duration of t
-    set ps to player position
-    set tid to id of t
-    set art to ""
+    set trackName to name of t
+    set trackArtist to artist of t
+    set trackAlbum to album of t
+    set trackDur to duration of t
+    set playerPos to player position
+    set trackId to id of t
+    set artUrl to ""
     try
-      set art to artwork url of t
+      set artUrl to artwork url of t
     end try
   end tell
-  set duMs to du as integer
-  set psMs to (ps * 1000) as integer
-  return st & "{SEP}" & nm & "{SEP}" & ar & "{SEP}" & al & "{SEP}" & (duMs as text) & "{SEP}" & (psMs as text) & "{SEP}" & tid & "{SEP}" & art
+  set durMillis to trackDur as integer
+  set posMillis to (playerPos * 1000) as integer
+  return playerState & "{SEP}" & trackName & "{SEP}" & trackArtist & "{SEP}" & trackAlbum & "{SEP}" & (durMillis as text) & "{SEP}" & (posMillis as text) & "{SEP}" & trackId & "{SEP}" & artUrl
 end if
 return "off"
 ''',
     "music": f'''
 if application "Music" is running then
   tell application "Music"
-    set st to player state as text
-    if st is "stopped" then return "stopped"
+    set playerState to player state as text
+    if playerState is "stopped" then return "stopped"
     set t to current track
-    set nm to name of t
-    set ar to artist of t
-    set al to ""
+    set trackName to name of t
+    set trackArtist to artist of t
+    set trackAlbum to ""
     try
-      set al to album of t
+      set trackAlbum to album of t
     end try
-    set du to 0
+    set trackDur to 0
     try
-      set du to duration of t
+      set trackDur to duration of t
     end try
-    set ps to player position
-    set tid to ""
+    set playerPos to player position
+    set trackId to ""
     try
-      set tid to persistent ID of t
+      set trackId to persistent ID of t
     end try
   end tell
-  set duMs to (du * 1000) as integer
-  set psMs to (ps * 1000) as integer
-  return st & "{SEP}" & nm & "{SEP}" & ar & "{SEP}" & al & "{SEP}" & (duMs as text) & "{SEP}" & (psMs as text) & "{SEP}" & tid & "{SEP}"
+  set durMillis to (trackDur * 1000) as integer
+  set posMillis to (playerPos * 1000) as integer
+  return playerState & "{SEP}" & trackName & "{SEP}" & trackArtist & "{SEP}" & trackAlbum & "{SEP}" & (durMillis as text) & "{SEP}" & (posMillis as text) & "{SEP}" & trackId & "{SEP}"
 end if
 return "off"
 ''',
