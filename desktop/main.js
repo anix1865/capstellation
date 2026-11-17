@@ -32,6 +32,7 @@ function applyOpenAtLogin(){
 
 /** Wallpaper mode: the page's "Use as wallpaper" button (via the local server) or the menu. */
 async function startWallpaper(){
+  server = server || await startServer({ ...paths, hooks });
   await wallpaper.start({ url: server.url, nativeDir: paths.nativeDir, onStop: stopWallpaper });
   if (mainWin && !mainWin.isDestroyed()){
     if (mainWin.isFullScreen()){                 // macOS: leave the fullscreen Space before hiding, or it stays behind empty
@@ -39,8 +40,10 @@ async function startWallpaper(){
     }
     mainWin.hide();
   }
+  writeSettings({ wallpaper: true });            // come back as the wallpaper next time
 }
 async function stopWallpaper(){
+  writeSettings({ wallpaper: false });
   await wallpaper.stop({ nativeDir: paths.nativeDir });
   if (mainWin && !mainWin.isDestroyed()) mainWin.show(); else createWindow();
 }
@@ -111,9 +114,14 @@ app.whenReady().then(() => {
         { label: 'Use as Wallpaper', accelerator: 'Ctrl+Shift+W', click: toggleWallpaper } ] },
     ]));
   }
-  createWindow();
+  // open the way it was left: as the wallpaper (quitting keeps that choice), or as a window
+  const launchedAt = Date.now();
+  if (readSettings().wallpaper){
+    startWallpaper().catch(e => { console.warn('wallpaper:', e.message || e); writeSettings({ wallpaper: false }); createWindow(); });
+  } else createWindow();
   // clicking the Dock icon brings the normal window back (and stops wallpaper mode)
   app.on('activate', () => {
+    if (Date.now() - launchedAt < 4000) return;     // macOS also sends this while the app is starting up
     if (wallpaper.state.active) stopWallpaper();
     else if (!mainWin || mainWin.isDestroyed()) createWindow();
   });
