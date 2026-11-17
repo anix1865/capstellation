@@ -1,0 +1,29 @@
+name: Move release tags
+
+# One-time job: after a history rewrite, point each release tag at the matching new commit (same title).
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/retag.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - name: Re-point tags
+        run: |
+          git fetch --force --tags origin
+          for tag in $(git tag -l 'v*'); do
+            subject="$(git log -1 --format=%s "$tag")"
+            new="$(git log main --format='%H %s' | awk -v s="$subject" 'substr($0, 42) == s { print $1; exit }')"
+            if [ -z "$new" ]; then echo "no match for $tag ($subject)"; continue; fi
+            if [ "$(git rev-parse "$tag^{commit}")" = "$new" ]; then echo "$tag already on $new"; continue; fi
+            git tag -f "$tag" "$new"
+            git push --force origin "refs/tags/$tag"
+            echo "moved $tag -> ${new:0:7} ($subject)"
+          done
