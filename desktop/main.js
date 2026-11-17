@@ -3,6 +3,7 @@
 const { app, BrowserWindow, session, shell, Menu } = require('electron');
 const path = require('path');
 const { startServer, PLATFORM } = require('./server');
+const { checkForUpdates } = require('./updater');
 
 // Packaged app: web UI + native helper live in Resources. Development: straight from the repo.
 const repoRoot = path.join(__dirname, '..');
@@ -23,7 +24,10 @@ async function createWindow(){
     show: false,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    setTimeout(() => checkForUpdates(win).catch(() => {}), 2500);   // ask about updates once the window is up
+  });
 
   // Links (AudD, Spotify dashboard…) open in the normal browser; Spotify login stays in-app.
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });

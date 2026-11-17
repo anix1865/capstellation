@@ -45,7 +45,9 @@ npm start
 
 The first launch builds the audio tap. macOS asks for Automation and Screen & System Audio Recording permissions, this time for the app itself.
 
-**Installers:** every push to `main` runs the *Desktop app* workflow (GitHub → Actions), which builds a macOS `.dmg` (Apple Silicon + Intel) and a Windows `Setup.exe`. Download them from the run's *Artifacts*. The builds aren't signed with a developer certificate yet, so the first time you open them:
+**Installers:** every push to `main` runs the *Desktop app* workflow, which builds a macOS `.dmg` (Apple Silicon + Intel) and a Windows `Setup.exe` and publishes them as a **GitHub Release** (`v0.1.<build>`). Download the latest from the repo's *Releases* page.
+
+**Updates:** each time the installed app opens, it checks the latest release. If there's a newer version it asks **Install now / Later**; *Install now* downloads it, replaces the app and restarts it (on Windows it runs the new installer). Until the app is signed with an Apple Developer ID, macOS sees each update as a new app, so it will ask for the Automation and Screen & System Audio Recording permissions again after updating. The builds aren't signed with a developer certificate yet, so the first time you open them:
 - **macOS:** right-click the app → **Open**. If it says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Capstellation.app`.
 - **Windows:** SmartScreen → **More info → Run anyway**.
 

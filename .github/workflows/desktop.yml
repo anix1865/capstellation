@@ -8,6 +8,13 @@ on:
     paths: ['index.html', 'audiotap.swift', 'desktop/**', 'native/**', '.github/workflows/desktop.yml']
   workflow_dispatch: {}
 
+# Every build is published as a GitHub Release (v0.1.<run number>); the app checks it on launch.
+permissions:
+  contents: write
+
+env:
+  APP_VERSION: 0.1.${{ github.run_number }}
+
 jobs:
   macos:
     runs-on: macos-latest
@@ -28,7 +35,9 @@ jobs:
 
       - name: Install
         working-directory: desktop
-        run: npm install --no-audit --no-fund
+        run: |
+          npm install --no-audit --no-fund
+          npm version ${{ env.APP_VERSION }} --no-git-tag-version --allow-same-version
 
       - name: Package
         working-directory: desktop
@@ -57,7 +66,9 @@ jobs:
 
       - name: Install
         working-directory: desktop
-        run: npm install --no-audit --no-fund
+        run: |
+          npm install --no-audit --no-fund
+          npm version ${{ env.APP_VERSION }} --no-git-tag-version --allow-same-version
 
       - name: Package
         working-directory: desktop
@@ -68,3 +79,25 @@ jobs:
           name: Capstellation-Windows
           path: desktop/dist/*.exe
           if-no-files-found: error
+
+  release:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { path: dist, merge-multiple: true }
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          ls -la dist
+          printf '%s\n' "${NOTES:-Manual build}" > notes.md
+          gh release create "v${APP_VERSION}" dist/* \
+            --repo "${{ github.repository }}" \
+            --title "Capstellation ${APP_VERSION}" \
+            --notes-file notes.md \
+            --target "${{ github.sha }}" \
+            --latest

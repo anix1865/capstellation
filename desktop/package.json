@@ -20,24 +20,62 @@
   "build": {
     "appId": "io.github.anix1865.capstellation",
     "productName": "Capstellation",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "server.js", "package.json"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "updater.js",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "../index.html", "to": "web/index.html" },
-      { "from": "native-bin/${os}", "to": "native", "filter": ["**/*"] }
+      {
+        "from": "../index.html",
+        "to": "web/index.html"
+      },
+      {
+        "from": "native-bin/${os}",
+        "to": "native",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
       "category": "public.app-category.music",
       "identity": "-",
       "hardenedRuntime": false,
       "extendInfo": {
         "NSAppleEventsUsageDescription": "Capstellation asks Spotify or Apple Music what's playing so it can show the lyrics in time.",
         "NSAudioCaptureUsageDescription": "Capstellation listens to the music that's playing to drive the visualizer.",
-        "NSMicrophoneUsageDescription": "Only used if you choose Listen → Mic to identify a song."
-      }
+        "NSMicrophoneUsageDescription": "Only used if you choose Listen \u2192 Mic to identify a song."
+      },
+      "artifactName": "Capstellation-${version}-${arch}.${ext}"
     },
-    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "artifactName": "Capstellation-Setup-${version}.${ext}" }
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Capstellation-Setup-${version}.${ext}"
+    }
   }
 }
