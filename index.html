@@ -204,28 +204,71 @@ function setPlayback(ms, playing, force=false){
 }
 
 /* ---------- lyrics parsing ---------- */
+/** Parses LRC. Also understands "enhanced" LRC word stamps like <00:12.34>word, when a file has them. */
+const stampMs = (m, sec) => (+m*60 + +sec) * 1000;
 function parseLRC(lrc){
   const out = [];
   for (const raw of lrc.split(/\r?\n/)){
     const tags = [...raw.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];
     if (!tags.length) continue;
-    const text = raw.replace(/\[[^\]]*\]/g, '').trim();
-    for (const m of tags) out.push({ t: (+m[1]*60 + +m[2]) * 1000, text });
+    const body = raw.replace(/\[[^\]]*\]/g, '');
+    const text = body.replace(/<\d+:\d+(?:\.\d+)?>/g, '').replace(/\s+/g, ' ').trim();
+    let wordTimes = null;
+    if (/<\d+:\d+(?:\.\d+)?>/.test(body)){
+      wordTimes = [];
+      for (const m of body.matchAll(/<(\d+):(\d+(?:\.\d+)?)>\s*([^<\s]+)/g)) wordTimes.push(stampMs(m[1], m[2]));
+      if (wordTimes.length !== text.split(' ').filter(Boolean).length) wordTimes = null;   // malformed: fall back to estimating
+    }
+    for (const m of tags) out.push({ t: stampMs(m[1], m[2]), text, wordTimes });
   }
   return out.sort((a,b) => a.t - b.t);
 }
+
+/** Rough syllable count; good enough to tell "I" from "understanding". */
+function syllables(word){
+  const w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!w) return 1;
+  if (w.length <= 3) return 1;
+  const groups = w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '').match(/[aeiouy]{1,2}/g);
+  return Math.max(1, groups ? groups.length : 1);
+}
+
+/**
+ * Word timing. LRC files only say when each LINE starts, so we estimate the words:
+ *  1. Learn this song's singing pace (ms per syllable) from lines that are sung back-to-back.
+ *  2. Sing each line at that pace from its start, instead of stretching it to fill the gap
+ *     before the next line. Pauses and held notes then stay at the END of the line,
+ *     which is where they usually are.
+ */
 function prepareLines(lines, durationMs){
-  for (let i=0;i<lines.length;i++){
-    const L = lines[i];
+  const info = lines.map((L, i) => {
     const next = lines[i+1] ? lines[i+1].t : (durationMs || L.t + 6000);
     const words = L.text.split(/\s+/).filter(Boolean);
-    L.end = Math.min(next, L.t + Math.max(1600, words.length * 650));
-    const span = (L.end - L.t) * 0.88;
-    const weights = words.map(w => w.replace(/[^\p{L}\p{N}]/gu,'').length + 2);
-    const total = weights.reduce((a,b)=>a+b, 0) || 1;
+    const syl = words.map(syllables);
+    return { gap: Math.max(0, next - L.t), words, syl, total: syl.reduce((a,b)=>a+b, 0) };
+  });
+  const rates = info.filter(x => x.total >= 4 && x.gap > 0 && x.gap < 9000).map(x => x.gap / x.total).sort((a,b)=>a-b);
+  // the faster lines are the ones with no pause after them, so take a low-ish percentile
+  const pace = rates.length >= 3 ? clamp(rates[Math.floor(rates.length*0.3)], 130, 480) : 260;
+  engine.pace = pace;
+
+  lines.forEach((L, i) => {
+    const { gap, words, syl, total } = info[i];
+    if (L.wordTimes){
+      L.words = words.map((w, j) => ({ text:w, t: L.wordTimes[j] }));
+      L.end = Math.min(L.t + gap, L.wordTimes[L.wordTimes.length-1] + 900);
+      return;
+    }
+    // natural length of this line at the song's pace; never longer than the gap
+    const sung = Math.min(gap * 0.95, total * pace * 1.08 + 120);
+    const span = Math.max(Math.min(gap, 350), sung);
+    // each word gets time for its syllables plus a small breath between words
+    const weights = syl.map(n => n + 0.35);
+    const sum = weights.reduce((a,b)=>a+b, 0) || 1;
     let acc = 0;
-    L.words = words.map((w,j) => { const t = L.t + span * (acc/total); acc += weights[j]; return { text:w, t }; });
-  }
+    L.words = words.map((w, j) => { const t = L.t + span * (acc/sum); acc += weights[j]; return { text:w, t }; });
+    L.end = Math.min(L.t + gap, L.t + span + 700);
+  });
   return lines;
 }
 /** Unsynced fallback: spread plain lyrics evenly across the song. */
@@ -856,7 +899,8 @@ function recordClip(ms){
     rec.start(); setTimeout(() => rec.state !== 'inactive' && rec.stop(), ms);
   });
 }
-const tcToMs = tc => tc.split(':').map(Number).reduce((a,b) => a*60 + b, 0) * 1000;
+// AudD gives whole seconds (rounded down), so add half a second to land in the middle of the error
+const tcToMs = tc => tc.split(':').map(Number).reduce((a,b) => a*60 + b, 0) * 1000 + 500;
 async function recognizeLoop(){
   if (!listen.running) return;
   listen.busy = true;
@@ -877,7 +921,13 @@ async function recognizeLoop(){
       const art = r.spotify?.album?.images?.[0]?.url || r.apple_music?.artwork?.url?.replace('{w}','1200').replace('{h}','1200');
       const dur = r.spotify?.duration_ms || r.apple_music?.durationInMillis;
       if (key !== engine.trackKey) openSong({ key, title:r.title, artist:r.artist, album:r.album, durationMs:dur, art, posMs:songPos, playing:true, perfAt: performance.now() });
-      else setPlayback(songPos, true);    // >2.5 s disagreement = you skipped → sky resets
+      else {
+        // big disagreement = you skipped → reset. Small ones are just recognition noise:
+        // ease halfway toward them instead of snapping, so the lyrics don't lurch fast/slow.
+        const diff = songPos - rawPos();
+        if (Math.abs(diff) > SEEK_THRESHOLD || !engine.playing) setPlayback(songPos, true);
+        else if (Math.abs(diff) > 350) setPlayback(rawPos() + diff * 0.5, true);
+      }
     }
   }catch(e){ setStatus('Recognition failed: ' + e.message); }
   listen.busy = false;
