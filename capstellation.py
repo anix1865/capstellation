@@ -22,6 +22,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -161,6 +163,29 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         super().do_GET()
+
+    def do_POST(self):
+        # /audd relays Listen-mode song recognition to AudD, so the browser never hits CORS limits
+        if self.path.split("?")[0] != "/audd":
+            self.send_error(404)
+            return
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        req = urllib.request.Request("https://api.audd.io/", data=body,
+                                     headers={"Content-Type": self.headers.get("Content-Type", "")})
+        try:
+            with urllib.request.urlopen(req, timeout=25) as r:
+                out = r.read()
+        except urllib.error.HTTPError as e:
+            out = e.read()
+        except Exception as e:  # network down, or Python missing SSL certificates
+            hint = (" (python.org installs: run 'Install Certificates.command' in your Python folder)"
+                    if "CERTIFICATE" in str(e).upper() else "")
+            out = json.dumps({"status": "error", "error": {"error_message": f"helper couldn't reach AudD: {e}{hint}"}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
 
     def end_headers(self):
         if not self.path.startswith("/now"):

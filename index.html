@@ -16,10 +16,11 @@
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:#050505;overflow:hidden;color:var(--ink);font-family:'Space Mono',ui-monospace,monospace}
 #stage{position:fixed;inset:0;overflow:hidden}
-.bg{position:absolute;inset:-8%;background-size:cover;background-position:center;transition:background-image .8s}
+.bg{position:absolute;left:-8%;top:-8%;width:116%;height:116%;display:block}
 #bgBlur{filter:blur(70px) saturate(1.4) brightness(.5);transform:scale(1.15)}
+body.collage #bgBlur{filter:blur(24px) saturate(1.35) brightness(.5);transform:scale(1.04)}  /* lighter blur so the collage still reads */
 #bgReveal{filter:blur(3px) saturate(1.2) brightness(.85)}
-body.sharpbg #bgBlur{filter:none;transform:none;inset:0}
+body.sharpbg #bgBlur{filter:none;transform:none;left:0;top:0;width:100%;height:100%}
 body.sharpbg #bgReveal{display:none}
 #shade{position:absolute;inset:0;background:#000;opacity:var(--shade);transition:opacity 1s}
 #tint{position:absolute;inset:0;background:
@@ -29,6 +30,9 @@ body.sharpbg #bgReveal{display:none}
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   animation:grain .9s steps(6) infinite}
 @keyframes grain{0%{transform:translate(0,0)}20%{transform:translate(-3%,2%)}40%{transform:translate(2%,-3%)}60%{transform:translate(-2%,-1%)}80%{transform:translate(3%,3%)}100%{transform:translate(0,0)}}
+canvas#glitch{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;pointer-events:none}
+body.glitching #time{translate:var(--gx,0) 0;text-shadow:calc(var(--gx,0px)*-1.5) 0 rgba(255,0,90,.75),calc(var(--gx,0px)*1.5) 0 rgba(0,230,255,.75),0 0 30px var(--clockGlow)}
+body.glitching #word{translate:calc(var(--gx,0px)*-1) 0;text-shadow:-4px 0 rgba(255,0,90,.8),4px 0 rgba(0,230,255,.8),0 0 40px var(--wordGlow2)}
 canvas#sky{position:absolute;inset:0;width:100%;height:100%}
 canvas#vis{position:absolute;left:50%;bottom:2.2vh;transform:translateX(-50%);width:min(44vw,620px);height:clamp(36px,6vh,64px);pointer-events:none;transition:opacity .6s,bottom .5s}
 body.novis canvas#vis{opacity:0}
@@ -79,6 +83,11 @@ code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;word-bre
 #staticRow.on{display:flex}
 label.chk{display:flex;align-items:center;gap:6px;cursor:pointer;opacity:.9}
 label.chk input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+#albumRow{display:none;margin-top:8px!important}
+#albumRow.on{display:flex}
+select{font:inherit;color:inherit;background:rgba(0,0,0,.35);border:1px solid rgba(255,220,190,.18);border-radius:8px;padding:6px 8px;max-width:210px}
+#micRow{display:none}
+#micRow.on{display:flex}
 body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
 #status{margin-top:10px;opacity:.7;min-height:1.2em;line-height:1.45}
 #meter{height:4px;border-radius:2px;background:rgba(255,255,255,.1);margin-top:8px;overflow:hidden}
@@ -95,10 +104,11 @@ body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
 </head>
 <body>
 <div id="stage">
-  <div id="bgBlur" class="bg"></div>
-  <div id="bgReveal" class="bg"></div>
+  <canvas id="bgBlur" class="bg"></canvas>
+  <canvas id="bgReveal" class="bg"></canvas>
   <div id="shade"></div>
   <div id="tint"></div>
+  <canvas id="glitch"></canvas>
   <div id="grain"></div>
   <canvas id="sky"></canvas>
   <canvas id="vis"></canvas>
@@ -151,13 +161,21 @@ body.dragging #stage{outline:2px dashed var(--accent);outline-offset:-14px}
         <button data-bg="album">Album art</button>
         <button data-bg="static">My image</button>
       </div>
+      <div id="albumRow" class="row">
+        <label class="chk"><input type="checkbox" id="chkCollage"> Collage</label>
+        <button id="btnShuffle" title="New collage layout" style="margin-left:auto">Shuffle layout</button>
+      </div>
       <div id="staticRow" class="row">
         <button id="btnPickImg" style="flex:1">Choose image…</button>
         <label class="chk"><input type="checkbox" id="chkBlur"> Blur</label>
       </div>
+      <div class="row" style="margin-top:8px">
+        <label class="chk"><input type="checkbox" id="chkGlitch"> Glitch effect</label>
+      </div>
       <input type="file" id="fileImg" accept="image/*" hidden>
     </div>
-    <div id="visRow" class="row"><span style="flex:1;opacity:.75">Visualizer needs audio:</span><button id="btnVisTab">Share audio</button><button id="btnVisMic">Mic</button></div>
+    <div id="visRow" class="row"><span style="flex:1;opacity:.75">Visualizer audio:</span><button id="btnVisMic">Use mic</button><button id="btnVisTab" title="Share a browser tab's audio (e.g. Spotify web player)">Share tab</button></div>
+    <div id="micRow" class="row"><span style="flex:1;opacity:.75">Audio input:</span><select id="micSel"></select></div>
     <div id="status"></div>
   </div>
 
@@ -175,7 +193,7 @@ const MAX_ON_SCREEN  = 15;     // hard cap, including ones still fading out
 const FADE_SPEED     = 0.10;   // how fast old constellations fade (per frame, 0–1)
 const DIE_SPEED      = 0.22;   // how fast the sky clears after a skip
 const SEEK_THRESHOLD = 2500;   // ms of disagreement that counts as a skip
-const LISTEN_CLIP_MS = 7000;   // length of audio sample sent for recognition
+const LISTEN_CLIP_MS = 6000;   // length of audio sample sent for recognition
 const LISTEN_EVERY   = 9000;   // pause between re-checks while listening
 const SP_POLL_MS     = 1200;
 const MAC_POLL_MS    = 800;
@@ -310,23 +328,125 @@ const bg = {
   blur: store.get('bgBlur', '') === '1',            // only used for the static image
   staticURL: store.get('bgImage', null),
 };
-let albumURL = null, shownURL = null;
+bg.collage = store.get('bgCollage', '1') === '1';    // album art as an asymmetrical collage
+bg.glitch  = store.get('bgGlitch', '') === '1';
+let albumURL = null, shownURL = null, bgImg = null, bgSeed = 1, bgSrcCanvas = null, bgToken = 0;
+const bgA = $('#bgBlur'), bgB = $('#bgReveal');
 function setArt(url){ albumURL = url; applyBackground(); }
-function applyBackground(){
+
+/** Loads an image, trying CORS first (so its colors can be read), then without. */
+function loadImg(url){
+  return new Promise(res => {
+    const go = cors => {
+      const im = new Image();
+      if (cors) im.crossOrigin = 'anonymous';
+      im.onload = () => res(im);
+      im.onerror = () => cors ? go(false) : res(null);
+      im.src = url;
+    };
+    go(!/^(data|blob):/.test(url));
+  });
+}
+const hashStr = str => { let h = 2166136261; for (let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+function mulberry32(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+async function applyBackground(){
+  const my = ++bgToken;
   const useStatic = bg.source === 'static' && bg.staticURL;
   const url = useStatic ? bg.staticURL : albumURL;
   const blurred = useStatic ? bg.blur : true;
   document.body.classList.toggle('sharpbg', !blurred);
-  if (url && url !== shownURL){
-    shownURL = url;
-    const css = `url("${url}")`;
-    $('#bgBlur').style.backgroundImage = css;
-    $('#bgReveal').style.backgroundImage = css;
-  }
-  if (url) analyzeImage(url, blurred);
+  document.body.classList.toggle('collage', !useStatic && bg.collage);
   document.querySelectorAll('[data-bg]').forEach(b => b.classList.toggle('on', b.dataset.bg === bg.source));
   $('#staticRow').classList.toggle('on', bg.source === 'static');
-  $('#chkBlur').checked = bg.blur;
+  $('#albumRow').classList.toggle('on', bg.source !== 'static');
+  $('#chkBlur').checked = bg.blur; $('#chkCollage').checked = bg.collage; $('#chkGlitch').checked = bg.glitch;
+  if (!url) return;
+  if (url !== shownURL){
+    const img = await loadImg(url);
+    if (my !== bgToken || !img) return;
+    bgImg = img; shownURL = url; bgSeed = hashStr(url);
+  }
+  renderBackground();
+}
+
+/** Draws the background into the canvases. The sharp layer is masked by the drifting spots (CSS),
+    the blurred base is a small copy of it (blur hides the low resolution, and it's much cheaper). */
+function renderBackground(){
+  if (!bgImg || !W) return;
+  const sharp = document.body.classList.contains('sharpbg');
+  const collage = document.body.classList.contains('collage');
+  const k = Math.min(1.5, DPR);
+  const bw = Math.round(W * (sharp ? 1 : 1.16) * k), bh = Math.round(H * (sharp ? 1 : 1.16) * k);
+  const main = sharp ? bgA : bgB;
+  main.width = bw; main.height = bh;
+  const g = main.getContext('2d');
+  (collage ? drawCollage : drawCover)(g, bw, bh, bgImg, bgSeed);
+  if (!sharp){
+    bgA.width = Math.max(1, Math.round(bw/4)); bgA.height = Math.max(1, Math.round(bh/4));
+    bgA.getContext('2d').drawImage(bgB, 0, 0, bgA.width, bgA.height);
+  }
+  bgSrcCanvas = main;
+  analyzeCanvas(main, !sharp);
+}
+let bgResizeT; addEventListener('resize', () => { clearTimeout(bgResizeT); bgResizeT = setTimeout(renderBackground, 200); });
+
+function drawCover(g, w, h, img){
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const sc = Math.max(w/iw, h/ih);
+  g.drawImage(img, (w - iw*sc)/2, (h - ih*sc)/2, iw*sc, ih*sc);
+}
+
+/**
+ * Asymmetrical collage: one big "hero" copy leaning to one side, a staggered column of
+ * medium copies on the other, small zoomed-in fragments and a couple of thin strips.
+ * The layout is seeded by the song, so each song gets its own stable arrangement.
+ */
+function drawCollage(g, w, h, img, seed){
+  const R = mulberry32(seed), r = (a,b) => a + R()*(b-a);
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const S = Math.min(w, h), side = R() < 0.5 ? -1 : 1;
+  const canFilter = 'filter' in g;
+
+  // backdrop: a big, darkened, zoomed-in crop
+  g.fillStyle = '#050505'; g.fillRect(0, 0, w, h);
+  g.save(); g.globalAlpha = 0.5;
+  const cz = r(0.55, 0.8), cx = r(0, 1-cz)*iw, cy = r(0, 1-cz)*ih;
+  const sc = Math.max(w/(iw*cz), h/(ih*cz));
+  g.drawImage(img, cx, cy, iw*cz, ih*cz, (w - iw*cz*sc)/2, (h - ih*cz*sc)/2, iw*cz*sc, ih*cz*sc);
+  g.restore();
+
+  const tiles = [];
+  const tile = (o) => { const crop = o.crop ?? 1, aspect = o.th/o.tw, cw = iw*crop, ch = Math.min(ih, cw*aspect);
+                        tiles.push({ ...o, sw: cw, sh: ch, sx: r(0, iw - cw), sy: r(0, ih - ch) }); };
+  // thin strips (drawn first, behind everything)
+  for (let i=0;i<2;i++){ const tw = S*r(0.5, 0.85), th = S*r(0.045, 0.085);
+    tile({ x: w*r(0.15, 0.85), y: h*r(0.1, 0.9), tw, th, rot: r(-6, 6), crop: r(0.5, 0.9), alpha: r(0.55, 0.8) }); }
+  // medium copies, staggered on the side opposite the hero
+  const nm = 2 + (R() < 0.5 ? 1 : 0);
+  for (let i=0;i<nm;i++){ const s = S*r(0.24, 0.38);
+    tile({ x: w*(0.5 - side*r(0.2, 0.36)), y: h*(0.2 + i*(0.6/(nm-1||1)) + r(-0.06, 0.06)), tw: s, th: s, rot: r(-9, 9), crop: r(0.6, 1), alpha: r(0.85, 1),
+           fx: ['', 'grayscale(1) contrast(1.15)', 'saturate(1.45)'][Math.floor(R()*3)] }); }
+  // the hero
+  { const s = S*r(0.6, 0.76); tile({ x: w*(0.5 + side*r(0.1, 0.2)), y: h*r(0.44, 0.58), tw: s, th: s, rot: r(-4, 4), crop: 1, alpha: 1, hero: true }); }
+  // small zoomed fragments, scattered
+  const ns = 3 + Math.floor(R()*3);
+  for (let i=0;i<ns;i++){ const s = S*r(0.09, 0.19);
+    tile({ x: w*r(0.06, 0.94), y: h*r(0.08, 0.92), tw: s, th: s*r(0.7, 1.3), rot: r(-14, 14), crop: r(0.25, 0.55), alpha: r(0.7, 1),
+           fx: ['', '', 'grayscale(1)', 'brightness(1.2) saturate(1.3)', 'contrast(1.3)'][Math.floor(R()*5)] }); }
+
+  for (const t of tiles){
+    g.save();
+    g.translate(t.x, t.y); g.rotate(t.rot * Math.PI/180);
+    g.globalAlpha = t.alpha;
+    g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = Math.max(t.tw, t.th)*0.07; g.shadowOffsetY = Math.max(t.tw, t.th)*0.02;
+    if (canFilter && t.fx) g.filter = t.fx;
+    g.drawImage(img, t.sx, t.sy, t.sw, t.sh, -t.tw/2, -t.th/2, t.tw, t.th);
+    g.filter = 'none'; g.shadowColor = 'transparent';
+    g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = Math.max(1, S*0.0015);
+    g.strokeRect(-t.tw/2, -t.th/2, t.tw, t.th);
+    g.restore();
+  }
 }
 
 /* ---------- color helpers ---------- */
@@ -398,37 +518,30 @@ function setTextColors(h, s, bgL){
   ink.ring  = `hsla(${h},${sWord}%,${Math.max(lWord, 70)}%,.95)`;
 }
 
-let analyzeToken = 0;
-function analyzeImage(url, blurred){
-  const my = ++analyzeToken;
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    if (my !== analyzeToken) return;
-    try{
-      const N = 48, c = document.createElement('canvas'); c.width = c.height = N;
-      const g = c.getContext('2d'); g.drawImage(img, 0, 0, N, N);
-      const d = g.getImageData(0, 0, N, N).data;
-      let best = null, bestScore = -1;
-      const lums = [];
-      for (let i=0;i<d.length;i+=4){
-        const r=d[i], gg=d[i+1], b=d[i+2];
-        const max=Math.max(r,gg,b), min=Math.min(r,gg,b);
-        const score = (max ? (max-min)/max : 0) * max;
-        if (score > bestScore){ bestScore = score; best = [r,gg,b]; }
-        lums.push(relLum(r,gg,b));
-      }
-      lums.sort((a,b)=>a-b);
-      // blurred mode dims the image (brightness .85 on the sharp spots ≈ 0.7× luminance)
-      // judge by the bright-ish areas (75th percentile), not the single brightest pixel
-      const bgL = lums[Math.floor(lums.length*0.75)] * (blurred ? 0.7 : 1);
-      let [h, s] = rgbToHsl(...best);
-      if (bestScore < 40) s = 0;                                  // nothing colorful in the image
-      setTextColors(Math.round(h), Math.round(s), bgL);
-      setVisPalette(Math.round(h), Math.round(s));
-    }catch{ /* image not readable (CORS): keep the current colors */ }
-  };
-  img.src = url;
+/** Reads the rendered background (what's actually on screen) to choose the text colors. */
+function analyzeCanvas(src, blurred){
+  try{
+    const N = 48, c = document.createElement('canvas'); c.width = c.height = N;
+    const g = c.getContext('2d'); g.drawImage(src, 0, 0, N, N);
+    const d = g.getImageData(0, 0, N, N).data;
+    let best = null, bestScore = -1;
+    const lums = [];
+    for (let i=0;i<d.length;i+=4){
+      const r=d[i], gg=d[i+1], b=d[i+2];
+      const max=Math.max(r,gg,b), min=Math.min(r,gg,b);
+      const score = (max ? (max-min)/max : 0) * max;
+      if (score > bestScore){ bestScore = score; best = [r,gg,b]; }
+      lums.push(relLum(r,gg,b));
+    }
+    lums.sort((a,b)=>a-b);
+    // judge by the bright-ish areas (75th percentile); blurred mode dims the image (~0.7× luminance)
+    const bgL = lums[Math.floor(lums.length*0.75)] * (blurred ? 0.7 : 1);
+    let [h, s] = rgbToHsl(...best);
+    if (bestScore < 40) s = 0;                                  // nothing colorful in the image
+    setTextColors(Math.round(h), Math.round(s), bgL);
+    setVisPalette(Math.round(h), Math.round(s));
+    glitchHue = Math.round(h);
+  }catch{ /* image not readable (CORS): keep the current colors */ }
 }
 
 /* ---------- static image: upload / drop / blur toggle ---------- */
@@ -440,6 +553,9 @@ function setBgSource(src){
 document.querySelectorAll('[data-bg]').forEach(b => b.onclick = () => setBgSource(b.dataset.bg));
 $('#btnPickImg').onclick = () => $('#fileImg').click();
 $('#chkBlur').onchange = e => { bg.blur = e.target.checked; store.set('bgBlur', bg.blur ? '1' : ''); applyBackground(); };
+$('#chkCollage').onchange = e => { bg.collage = e.target.checked; store.set('bgCollage', bg.collage ? '1' : ''); applyBackground(); };
+$('#btnShuffle').onclick = () => { bgSeed = (bgSeed * 1664525 + 1013904223) >>> 0; renderBackground(); };
+$('#chkGlitch').onchange = e => { bg.glitch = e.target.checked; store.set('bgGlitch', bg.glitch ? '1' : ''); if (!bg.glitch){ gctx.clearRect(0,0,gcv.width,gcv.height); document.body.classList.remove('glitching'); } };
 $('#fileImg').onchange = e => { const f = e.target.files?.[0]; if (f) useImageFile(f); e.target.value = ''; };
 function useImageFile(file){
   if (!file.type.startsWith('image/')){ setStatus('That file isn’t an image.'); return; }
@@ -492,6 +608,76 @@ function animateMask(now){
 }
 
 /* =========================================================================
+   Glitch effect: short bursts of torn scanlines and neon pixel blocks.
+   Drawn at low resolution and scaled up with pixelated rendering for the blocky look.
+   Bursts follow the beat when there's audio; otherwise they come every few seconds.
+   ========================================================================= */
+const gcv = $('#glitch'), gctx = gcv.getContext('2d');
+let glitchHue = 20;
+const gl = { until: 0, next: 0, cool: 0, lastDraw: 0, bassAvg: 0 };
+function startBurst(now){ gl.until = now + rand(90, 280); }
+function drawGlitch(now){
+  if (!bg.glitch) return;
+  const gw = Math.ceil(W/5), gh = Math.ceil(H/5);
+  if (gcv.width !== gw || gcv.height !== gh){ gcv.width = gw; gcv.height = gh; }
+
+  // trigger: kick drum if we can hear the music, otherwise a loose random rhythm
+  const L = vis.levels, haveAudio = !!currentAnalyser();
+  if (haveAudio){
+    const bass = (L[0] + L[1] + L[2] + L[3]) / 4;
+    gl.bassAvg = gl.bassAvg*0.96 + bass*0.04;
+    if (bass > gl.bassAvg*1.35 + 0.06 && now > gl.cool){ startBurst(now); gl.cool = now + rand(450, 1500); }
+  } else if (now > gl.next){ startBurst(now); gl.next = now + rand(1200, 3800); }
+
+  const burst = now < gl.until;
+  document.body.classList.toggle('glitching', burst);
+  if (now - gl.lastDraw < 45) return;            // re-randomize ~20×/s for a choppy flicker
+  gl.lastDraw = now;
+  gctx.clearRect(0, 0, gw, gh);
+  if (!burst){
+    if (Math.random() < 0.25) drawBlocks(gw, gh, 1 + (Math.random()*2|0), 0.35);   // faint leftovers between bursts
+    return;
+  }
+  document.documentElement.style.setProperty('--gx', `${rand(-6, 6).toFixed(1)}px`);
+  // torn scanlines: horizontal slices of the background, shoved sideways
+  if (bgSrcCanvas){
+    const sw = bgSrcCanvas.width, sh = bgSrcCanvas.height, sharp = document.body.classList.contains('sharpbg');
+    const n = 3 + (Math.random()*7|0);
+    for (let i=0;i<n;i++){
+      // a partial-width sliver of the background, shoved sideways
+      const y = Math.random()*gh, hh = 1 + Math.random()*gh*0.03, shift = rand(-1, 1)*gw*0.12;
+      const x0 = Math.random()*gw*0.6, xw = gw*rand(0.15, 0.6);
+      const fx = sharp ? x0/gw : (x0/gw + 0.08)/1.16, fw = sharp ? xw/gw : xw/gw/1.16;
+      const fy = sharp ? y/gh : (y/gh + 0.08)/1.16, fh = sharp ? hh/gh : hh/gh/1.16;
+      gctx.globalAlpha = rand(0.6, 0.9);
+      gctx.drawImage(bgSrcCanvas, fx*sw, fy*sh, fw*sw, fh*sh, x0 + shift, y, xw, hh);
+      gctx.globalCompositeOperation = 'screen';
+      gctx.fillStyle = Math.random() < 0.5 ? 'rgba(255,0,80,.35)' : 'rgba(0,220,255,.35)';
+      gctx.fillRect(x0 + shift + rand(-3, 3), y, xw, hh);
+      gctx.globalCompositeOperation = 'source-over';
+    }
+    gctx.globalAlpha = 1;
+  }
+  drawBlocks(gw, gh, 10 + (Math.random()*16|0), 1);
+}
+/** Neon pixel blocks: short rainbow-segmented bars, mostly in the song's hue, its complement and pure RGB. */
+function drawBlocks(gw, gh, n, alpha){
+  const hues = [glitchHue, (glitchHue+180)%360, (glitchHue+40)%360, 300, 190, 140, 0, 240];
+  for (let i=0;i<n;i++){
+    const y = Math.random()*gh | 0, h = 1 + (Math.random()*3|0);
+    let x = Math.random()*gw | 0, w = 3 + (Math.random()*gw*0.25|0);
+    const segs = 1 + (Math.random()*4|0);
+    for (let k=0;k<segs && x < gw;k++){
+      const sw = Math.max(1, (w/segs + rand(-2, 2))|0);
+      const hue = hues[Math.random()*hues.length|0];
+      gctx.fillStyle = `hsla(${hue},95%,${rand(50, 70)|0}%,${alpha*rand(0.55, 1)})`;
+      gctx.fillRect(x, y, sw, h);
+      x += sw;
+    }
+  }
+}
+
+/* =========================================================================
    The sky: constellations of words
    ========================================================================= */
 const cv = $('#sky'), ctx = cv.getContext('2d');
@@ -517,9 +703,10 @@ function resetSky(hard=false){
 function pickCenter(){
   const recent = sky.filter(c=>!c.dying).slice(-5).map(c=>c.center);
   const top = document.body.classList.contains('noclock') ? 0.3 : 0.44;
+  const bottom = document.body.classList.contains('novis') ? 0.82 : 0.74;
   let best = null, bestScore = -Infinity;
   for (let k=0;k<14;k++){
-    const c = { x: rand(0.17, 0.83), y: rand(top, 0.82) };
+    const c = { x: rand(0.17, 0.83), y: rand(top, bottom) };
     let score = 0;
     recent.forEach((r,i) => {
       const d = Math.hypot((c.x-r.x)*W/H, c.y-r.y);
@@ -561,9 +748,33 @@ function addConstellation(line){
   });
   const prev = sky.filter(c=>!c.dying).slice(-1)[0];
   const link = prev ? { from: prev, idx: prev.stars.length-1 } : null;
-  sky.push({ line, center, stars, edges, link, alpha: 0, born: performance.now(), dying: 0 });
+  const con = { line, center, stars, edges, link, alpha: 0, born: performance.now(), dying: 0 };
+  fitConstellation(con);
+  sky.push(con);
   enforceCap();
 }
+/** Where the visualizer lives (its highest position, when the UI is showing), padded a little. */
+function visZone(){
+  if (document.body.classList.contains('novis')) return null;
+  const vw = Math.min(W*0.44, 620), vh = clamp(H*0.06, 36, 64);
+  return { x0: W/2 - vw/2 - 50, x1: W/2 + vw/2 + 50, y0: H - (H*0.022 + 44) - vh - 40 };
+}
+/** Slide a new constellation so no star (or its label) sits on the visualizer or off-screen. */
+function fitConstellation(c){
+  const z = visZone();
+  let up = 0, minX = Infinity, maxX = -Infinity;
+  for (const s of c.stars){
+    const [x, y] = starXY(c, s);
+    const bottom = y + 24;                                    // star + its little label
+    if (z && x > z.x0 && x < z.x1) up = Math.max(up, bottom - z.y0);
+    up = Math.max(up, bottom - (H - 20));
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+  }
+  if (up > 0) c.center.y -= up / H;
+  if (minX < 40) c.center.x += (40 - minX) / W;
+  else if (maxX > W - 40) c.center.x -= (maxX - (W - 40)) / W;
+}
+
 /** Never more than MAX_ON_SCREEN constellations: drop the faintest fading ones first, then the oldest. */
 function enforceCap(){
   while (sky.length > MAX_ON_SCREEN){
@@ -660,9 +871,14 @@ function drawSky(p, now){
       wordEl.textContent = active.s.text.replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, '');
       wordEl.classList.remove('pop'); void wordEl.offsetWidth; wordEl.classList.add('pop');
     }
-    const ww = wordEl.offsetWidth || 120;
-    wordEl.style.left = clamp(x, ww/2 + 16, W - ww/2 - 16) + 'px';
-    wordEl.style.top  = clamp(y + r + labelSize + 6, 0, H - 90) + 'px';
+    const ww = wordEl.offsetWidth || 120, wh = wordEl.offsetHeight || 60;
+    const left = clamp(x, ww/2 + 16, W - ww/2 - 16);
+    let top = y + r + labelSize + 6;
+    const z = visZone();
+    if ((z && left + ww/2 > z.x0 && left - ww/2 < z.x1 && top + wh > z.y0) || top + wh > H - 12)
+      top = y - r - wh - 4;                                   // no room below: put the word above its star
+    wordEl.style.left = left + 'px';
+    wordEl.style.top  = clamp(top, 0, H - wh - 12) + 'px';
     wordEl.style.opacity = 1;
   } else {
     wordEl.style.opacity = 0;
@@ -675,30 +891,65 @@ function drawSky(p, now){
    ========================================================================= */
 const vcv = $('#vis'), vctx = vcv.getContext('2d');
 const VIS_BARS = 28;                                   // per side (mirrored → 56 bars)
-const vis = { analyser:null, ac:null, stream:null, levels:new Float32Array(VIS_BARS), buf:null };
+const vis = { analyser:null, ac:null, stream:null, src:null, levels:new Float32Array(VIS_BARS), buf:null, peak:0.3 };
 function visResize(){
   const r = vcv.getBoundingClientRect();
   vcv.width = Math.round(r.width*DPR); vcv.height = Math.round(r.height*DPR);
 }
 addEventListener('resize', visResize);
-async function connectVisAudio(useMic){
+/* ---------- audio input (shared by the visualizer and Listen mode) ---------- */
+// Tip: install the free BlackHole driver and pick it here to feed the app your Mac's sound directly.
+function micConstraints(){
+  const id = store.get('micId', '');
+  return { deviceId: id ? { ideal: id } : undefined, echoCancellation:false, noiseSuppression:false, autoGainControl:true };
+}
+async function listMics(){
+  try{
+    const mics = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    if (!mics.length || !mics[0].label) return;               // no labels until mic permission is granted
+    const sel = $('#micSel'), cur = store.get('micId', '');
+    sel.innerHTML = '';
+    mics.forEach((d, i) => { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || `Microphone ${i+1}`; sel.appendChild(o); });
+    if (cur && mics.some(d => d.deviceId === cur)) sel.value = cur;
+    $('#micRow').classList.add('on');
+  }catch{}
+}
+$('#micSel').onchange = e => {
+  store.set('micId', e.target.value);
+  if (vis.src === 'mic') connectVisAudio(true);
+  if (listen.running && listen.src === 'mic') startListening(true);
+};
+navigator.mediaDevices?.addEventListener?.('devicechange', listMics);
+
+async function connectVisAudio(useMic, quiet=false){
   let stream;
   try{
-    if (useMic) stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
+    if (useMic) stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
     else {
       stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }, systemAudio:'include' });
       stream.getVideoTracks().forEach(t => t.stop());
-      if (!stream.getAudioTracks().length){ setStatus('No audio was shared. Choose your screen (or a music tab) and turn on the audio switch, or use Mic.'); return; }
+      if (!stream.getAudioTracks().length){ setStatus('No audio came through. In the share dialog pick a browser tab and turn on its audio switch — or use the mic.'); return; }
     }
-  }catch{ setStatus('Audio for the visualizer was blocked or cancelled.'); return; }
+  }catch{ if (!quiet) setStatus(useMic ? 'Microphone access was blocked. Allow it in the browser’s site settings.' : 'Sharing was cancelled.'); return; }
   vis.stream?.getTracks().forEach(t => t.stop()); vis.ac?.close?.();
   vis.stream = new MediaStream(stream.getAudioTracks());
   vis.ac = new (window.AudioContext || window.webkitAudioContext)();
+  vis.ac.resume?.();
   vis.analyser = vis.ac.createAnalyser(); vis.analyser.fftSize = 2048; vis.analyser.smoothingTimeConstant = 0.78;
+  vis.analyser.minDecibels = -95; vis.analyser.maxDecibels = -25;
   vis.ac.createMediaStreamSource(vis.stream).connect(vis.analyser);
-  vis.stream.getAudioTracks()[0].addEventListener('ended', () => { vis.analyser = null; updateVisRow(); });
-  setStatus('Visualizer connected.');
+  vis.src = useMic ? 'mic' : 'tab';
+  store.set('visSrc', vis.src);                                 // remember: reconnect the mic automatically next time
+  vis.stream.getAudioTracks()[0].addEventListener('ended', () => { vis.analyser = null; vis.src = null; updateVisRow(); });
+  if (!quiet) setStatus(useMic ? 'Visualizer is listening through the microphone.' : 'Visualizer connected to the shared tab.');
+  if (useMic) listMics();
   updateVisRow();
+}
+/** If the mic was used before and permission is already granted, reconnect without asking. */
+async function autoVisMic(){
+  if (store.get('visSrc') !== 'mic' || vis.analyser || (mode !== 'mac' && mode !== 'spotify')) return;
+  try{ const p = await navigator.permissions.query({ name:'microphone' }); if (p.state !== 'granted') return; }catch{ return; }
+  connectVisAudio(true, true);
 }
 function currentAnalyser(){ return (mode === 'listen' && listen.analyser) || vis.analyser; }
 function updateVisRow(){
@@ -727,6 +978,10 @@ function drawVis(now){
       let m = 0; for (let k=a;k<b && k<n;k++) m = Math.max(m, vis.buf[k]);
       targets[i] = Math.pow(m/255, 1.6) * (0.75 + i/VIS_BARS*0.6);   // tilt up the treble a bit
     }
+    // auto-gain: a mic across the room is much quieter than a direct feed, so scale to the recent peak
+    const top = Math.max(...targets);
+    vis.peak = Math.max(top, vis.peak * 0.996, 0.12);
+    for (let i=0;i<VIS_BARS;i++) targets[i] = Math.min(1, targets[i] / vis.peak * 0.9);
   }
   for (let i=0;i<VIS_BARS;i++){ const tg = targets[i]; L[i] += (tg - L[i]) * (tg > L[i] ? 0.55 : 0.14); }
 
@@ -763,6 +1018,7 @@ function frame(now){
   drawSky(p, now);
   animateMask(now);
   drawVis(now);
+  drawGlitch(now);
   requestAnimationFrame(frame);
 }
 
@@ -933,7 +1189,7 @@ async function handleSpotifyRedirect(){
 $('#auddToken').value = store.get('audd', '');
 $('#auddToken').addEventListener('keydown', e => e.stopPropagation());
 $('#spClient').addEventListener('keydown', e => e.stopPropagation());
-let listen = { stream:null, analyser:null, running:false, silentSince:0, loud:false, timer:null, busy:false };
+let listen = { stream:null, analyser:null, running:false, silentSince:0, loud:false, timer:null, busy:false, src:null, matched:false };
 async function startListening(useMic){
   const token = $('#auddToken').value.trim(); if (!token){ setStatus('Paste your AudD API token first.'); return; }
   store.set('audd', token);
@@ -941,7 +1197,7 @@ async function startListening(useMic){
   let stream;
   try{
     if (useMic){
-      stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
     } else {
       stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }, systemAudio:'include' });
       stream.getVideoTracks().forEach(t => t.stop());
@@ -952,7 +1208,8 @@ async function startListening(useMic){
   const ac = new (window.AudioContext || window.webkitAudioContext)();
   const src = ac.createMediaStreamSource(listen.stream);
   listen.analyser = ac.createAnalyser(); listen.analyser.fftSize = 1024; src.connect(listen.analyser);
-  listen.ac = ac; listen.running = true;
+  listen.ac = ac; listen.running = true; listen.src = useMic ? 'mic' : 'share'; listen.matched = false;
+  if (useMic) listMics();
   listen.stream.getAudioTracks()[0].addEventListener('ended', () => { stopListening(); setStatus('Audio sharing stopped.'); });
   setStatus('Listening… identifying the song.'); updateVisRow();
   levelLoop();
@@ -972,6 +1229,9 @@ function levelLoop(){
   let s = 0; for (const v of buf) s += v*v;
   const rms = Math.sqrt(s / buf.length);
   $('#meter i').style.width = clamp(rms*400, 0, 100) + '%';
+  // A mic always hears room noise and music through speakers comes in quiet, so loudness can't
+  // tell "paused" from "quiet passage" — with the mic, leave pause/skip detection to recognition.
+  if (listen.src === 'mic'){ requestAnimationFrame(levelLoop); return; }
   const now = performance.now();
   if (rms < 0.004){
     if (!listen.silentSince) listen.silentSince = now;
@@ -998,6 +1258,17 @@ function recordClip(ms){
   });
 }
 // AudD gives whole seconds (rounded down), so add half a second to land in the middle of the error
+/** Send to AudD through the Mac helper when it's running (no browser CORS issues), else directly. */
+let helperUp = null;
+async function auddRequest(fd){
+  if (helperUp === null){ try{ helperUp = (await fetch('now', { cache:'no-store' })).ok; }catch{ helperUp = false; } }
+  try{
+    return await (await fetch(helperUp ? 'audd' : 'https://api.audd.io/', { method:'POST', body:fd })).json();
+  }catch(e){
+    if (!helperUp) throw new Error('couldn’t reach AudD from the browser. Run the Mac helper (python3 capstellation.py) and open the app from the link it prints; it relays the request.');
+    throw e;
+  }
+}
 const tcToMs = tc => tc.split(':').map(Number).reduce((a,b) => a*60 + b, 0) * 1000 + 500;
 async function recognizeLoop(){
   if (!listen.running) return;
@@ -1009,11 +1280,12 @@ async function recognizeLoop(){
     fd.append('api_token', store.get('audd'));
     fd.append('file', blob, 'clip.' + (blob.type.includes('mp4') ? 'm4a' : 'webm'));
     fd.append('return', 'apple_music,spotify');
-    const j = await (await fetch('https://api.audd.io/', { method:'POST', body:fd })).json();
+    const j = await auddRequest(fd);
     if (j.status === 'error'){ setStatus('AudD: ' + (j.error?.error_message || 'error')); }
-    else if (!j.result){ if (listen.loud) setStatus('Listening… no match yet.'); }
+    else if (!j.result){ setStatus(listen.matched ? 'Listening…' : 'Listening… no match yet. Turn the volume up or move closer to the speakers.'); }
     else {
       const r = j.result;
+      listen.matched = true;
       const songPos = tcToMs(r.timecode) + (performance.now() - startPerf);   // timecode = where the clip began
       const key = `${r.artist} — ${r.title}`.toLowerCase();
       const art = r.spotify?.album?.images?.[0]?.url || r.apple_music?.artwork?.url?.replace('{w}','1200').replace('{h}','1200');
@@ -1029,7 +1301,8 @@ async function recognizeLoop(){
     }
   }catch(e){ setStatus('Recognition failed: ' + e.message); }
   listen.busy = false;
-  if (listen.running) listen.timer = setTimeout(recognizeLoop, LISTEN_EVERY);
+  // until the first match, try again almost right away; after that, re-check every few seconds
+  if (listen.running) listen.timer = setTimeout(recognizeLoop, listen.matched ? LISTEN_EVERY : 1200);
 }
 $('#btnListen').onclick = () => startListening(false);
 $('#btnMic').onclick = () => startListening(true);
@@ -1056,6 +1329,7 @@ function setMode(m){
     else setStatus('Connect your Spotify account to start.');
   }
   updateVisRow();
+  autoVisMic();
   if (m === 'listen') setStatus('Tip: share the tab playing Spotify / Apple Music / Amazon Music web, or your whole screen with “Share system audio”.');
 }
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
@@ -1101,6 +1375,7 @@ addEventListener('keydown', e => {
 /* ---------- boot ---------- */
 (async () => {
   setArt(placeholderCover());     // something warm to look at before a real cover arrives
+  listMics();
   const fromSpotify = await handleSpotifyRedirect();
   setMode(fromSpotify ? 'spotify' : store.get('mode'));
   requestAnimationFrame(frame);

@@ -32,20 +32,25 @@ The helper uses only Python's standard library, so there's nothing to install. I
 
 **Spotify (Web API).** Use this on a non-Mac computer, or to follow Spotify playing on another device. Create an app at developer.spotify.com/dashboard, add the Redirect URI shown in the app (e.g. `http://127.0.0.1:8787/`), and paste the Client ID.
 
-**Listen.** For anything else (Amazon Music, YouTube…). It records the audio and identifies the song with the AudD API, which needs a token from dashboard.audd.io. A token is needed because recognizing a song from raw sound means matching it against a fingerprint database.
+**Listen.** For anything else (Amazon Music, YouTube…). It records audio (the MacBook mic works) and identifies the song with the AudD API, which needs a token from dashboard.audd.io. A token is needed because recognizing a song from raw sound means matching it against a fingerprint database. When the Mac helper is running, recognition requests go through it, which avoids browser blocking. Until the first match it retries every ~1 s; after that it re-checks every ~15 s to catch skips.
 
 Lyrics come from **lrclib.net** (free, no key). Covers come from Spotify, or the iTunes Search API as a fallback.
 
 ## Background
 
-- **Album art:** blurred, with three soft sharp spots drifting independently.
+- **Album art:** an asymmetrical **collage** of the cover: one big copy leaning to one side, a staggered column of medium copies on the other, small zoomed-in fragments and thin strips. Each song gets its own layout; **Shuffle layout** makes a new one. It's blurred, with three sharp spots drifting across it. Untick **Collage** for the plain cover.
+- **Glitch effect:** short bursts of torn scanlines and neon pixel blocks, with a red/cyan split on the clock and sung word. When the app can hear the music, bursts land on the kick drum; otherwise they come every few seconds.
 - **My image:** pick one image (or drag it onto the screen). It shows sharp by default; tick **Blur** for the same blur + drifting-spots treatment. The image is remembered in this browser.
 
 The clock, sung word, star labels and lines take their color from whatever background is showing. They use the image's own hue at a lightness that keeps them readable. If an image is too bright for light text, it gets a dark shade, but only as much as needed. The visualizer uses the complementary color.
 
 ## Visualizer
 
-A slim mirrored bar visualizer sits at the bottom center. In **Listen** mode it uses the audio you already shared. In **Mac** and **Spotify** modes, click **Share audio** (choose your screen and switch on its audio, where your Chrome/macOS offers that) or **Mic** in the panel.
+A slim mirrored bar visualizer sits at the bottom center, and constellations keep clear of it. Browsers can't capture the Spotify/Music *desktop* apps' sound directly, so:
+
+- **Use mic** (Mac and Spotify modes): listens through your microphone, with automatic gain so quiet speakers still move the bars. The choice is remembered, and the mic reconnects automatically next time.
+- **Share tab:** if the music plays in a browser tab (e.g. the Spotify web player), share that tab's audio.
+- **Exact system audio (optional):** install the free [BlackHole](https://github.com/ExistentialAudio/BlackHole) driver, create a *Multi-Output Device* in Audio MIDI Setup (your speakers + BlackHole), and choose **BlackHole** under *Audio input*. The visualizer, and Listen mode, then hear your Mac's sound directly.
 
 ## How sync works
 
