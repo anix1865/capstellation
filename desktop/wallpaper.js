@@ -26,11 +26,19 @@ function helperExe(nativeDir){
   const exe = path.join(nativeDir, 'capstellation-helper.exe');
   return fs.existsSync(exe) ? exe : null;
 }
+/** wallpaper.log in the app's data folder: what the desktop looked like and what happened (for troubleshooting). */
+function log(...parts){
+  try{
+    fs.mkdirSync(app.getPath('userData'), { recursive: true });
+    fs.appendFileSync(path.join(app.getPath('userData'), 'wallpaper.log'), `[${new Date().toISOString()}] ${parts.join(' ')}\n`);
+  }catch{}
+}
 function runHelper(nativeDir, args){
   return new Promise((ok, bad) => {
     const exe = helperExe(nativeDir);
-    if (!exe) return bad(new Error('capstellation-helper.exe is missing'));
+    if (!exe){ log('helper missing in', nativeDir); return bad(new Error('capstellation-helper.exe is missing')); }
     execFile(exe, args, { timeout: 8000, windowsHide: true }, (err, stdout, stderr) => {
+      log(args[0], '→', (stdout || '').trim().replace(/\s*\n\s*/g, ' | '), err ? `ERROR ${(stderr || err.message).trim()}` : '');
       if (err) return bad(new Error((stderr || stdout || err.message).trim()));
       ok(stdout.trim());
     });
@@ -47,6 +55,18 @@ function tapRun(nativeDir, args){
     if (!fs.existsSync(bin)) return bad(new Error('audiotap is missing'));
     execFile(bin, args, { timeout: 8000 }, (err, stdout, stderr) => err ? bad(new Error((stderr || err.message).trim())) : ok(stdout.trim()));
   });
+}
+/**
+ * macOS: Electron's 'desktop' window type sits one layer *below* the desktop picture, so a normal
+ * picture (like the menu-bar snapshot) covers it. Put the wallpaper one layer above the picture
+ * and still well below the desktop icons.
+ */
+async function placeAboveDesktopPicture(nativeDir){
+  let picture = -2147483623;                         // CGWindowLevelForKey(.desktopWindow) on current macOS
+  try{ const [p] = (await tapRun(nativeDir, ['--desktop-levels'])).split(' ').map(Number); if (Number.isFinite(p)) picture = p; }
+  catch(e){ console.warn('wallpaper: desktop levels:', e.message || e); }
+  try{ wallWin.setAlwaysOnTop(true, 'normal', picture + 1); }       // 'normal' is level 0, so this lands at picture + 1
+  catch(e){ console.warn('wallpaper: level:', e.message || e); }
 }
 async function rememberMacPicture(nativeDir){
   const [p, scaling, clip] = (await tapRun(nativeDir, ['--get-wallpaper'])).split('\t');
@@ -138,7 +158,8 @@ async function start({ url, nativeDir, onStop }){
     resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
     enableLargerThanScreen: true, roundedCorners: false,
     backgroundColor: '#050505', title: 'Capstellation wallpaper',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    // keep drawing even when macOS thinks the desktop is covered
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   wallWin.setIgnoreMouseEvents(true);
   if (mac) wallWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
@@ -157,6 +178,7 @@ async function start({ url, nativeDir, onStop }){
       throw e;
     }
   } else {
+    await placeAboveDesktopPicture(nativeDir);
     wallWin.showInactive();
     macCtx = { nativeDir };
     try{ await rememberMacPicture(nativeDir); }catch(e){ console.warn('wallpaper:', e.message || e); }

@@ -22,7 +22,13 @@ import AppKit
 // One-off jobs for the app's wallpaper mode (the menu bar takes its tint from the real desktop picture):
 //   --get-wallpaper              prints "<path>\t<scaling>\t<clipping>" for the main screen
 //   --set-wallpaper <path> [scaling clipping]
+//   --desktop-levels             prints the desktop picture's and desktop icons' window levels
 let cli = CommandLine.arguments
+// --desktop-levels: the window layers of the desktop picture and the desktop icons ("<picture> <icons>")
+if cli.count >= 2 && cli[1] == "--desktop-levels" {
+    print("\(CGWindowLevelForKey(.desktopWindow)) \(CGWindowLevelForKey(.desktopIconWindow))")
+    exit(0)
+}
 if cli.count >= 2 && (cli[1] == "--get-wallpaper" || cli[1] == "--set-wallpaper") {
     guard let screen = NSScreen.main ?? NSScreen.screens.first else { note("no screen"); exit(1) }
     let ws = NSWorkspace.shared

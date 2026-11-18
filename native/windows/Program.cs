@@ -282,66 +282,131 @@ static class Program
 }
 
 /// <summary>
-/// Puts a window behind the desktop icons (the way wallpaper apps do it):
-/// ask Explorer to split the desktop into its icon layer and a wallpaper layer, then parent our window
-/// to the wallpaper layer. Windows 11 24H2 moved that layer inside Progman, so both layouts are handled.
+/// Puts a window behind the desktop icons (the way wallpaper apps do it).
+///  - Windows 10 / 11 up to 23H2: ask Explorer to split the desktop (message 0x052C); the icons move into a
+///    top-level WorkerW and the plain wallpaper is drawn by the next top-level WorkerW. Parent our window there.
+///  - Windows 11 24H2+ ("raised desktop"): the icons (SHELLDLL_DefView) stay a layered child of Progman and the
+///    wallpaper is a WorkerW child of Progman below them. Our window must be a layered child of Progman,
+///    placed between the two, or the system never draws it.
+/// Prints what it found, for the app's wallpaper.log.
 /// </summary>
 static class Wallpaper
 {
     delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+    [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindow(string? cls, string? title);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string? cls, string? title);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr lParam);
     [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint msg, IntPtr w, IntPtr l, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+    [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
+    [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr hwnd, ref POINT p);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+    [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint key, byte alpha, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT p, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr mon, ref MONITORINFO mi);
+    [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint action, uint param, StringBuilder? sb, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint action, uint param, string? str, uint flags);
 
-    const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
-    const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77;
+    const int GWL_STYLE = -16, GWL_EXSTYLE = -20;
+    const long WS_CHILD = 0x40000000, WS_POPUP = 0x80000000, WS_EX_LAYERED = 0x80000, WS_EX_NOREDIRECTIONBITMAP = 0x200000;
+    const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20, SWP_SHOWWINDOW = 0x40;
+
+    static long Style(IntPtr h, int i) => GetWindowLongPtr(h, i).ToInt64();
+    static void SetStyle(IntPtr h, int i, long v) => SetWindowLongPtr(h, i, new IntPtr(v));
+
+    /// <summary>The wallpaper WorkerW among Progman's children: the biggest visible one (Explorer also keeps tiny helpers).</summary>
+    static IntPtr BiggestChildWorker(IntPtr progman)
+    {
+        IntPtr best = IntPtr.Zero, w = IntPtr.Zero; long area = -1;
+        while ((w = FindWindowEx(progman, w, "WorkerW", null)) != IntPtr.Zero)
+        {
+            GetWindowRect(w, out var r); long a = (long)(r.R - r.L) * (r.B - r.T);
+            if (IsWindowVisible(w) && a > area) { area = a; best = w; }
+        }
+        return best;
+    }
+
+    /// <summary>Make the window a plain child before re-parenting (a popup that's half-attached misbehaves).</summary>
+    static void MakeChild(IntPtr win, bool layered)
+    {
+        SetStyle(win, GWL_STYLE, (Style(win, GWL_STYLE) & ~WS_POPUP) | WS_CHILD);
+        if (layered)
+        {
+            SetStyle(win, GWL_EXSTYLE, Style(win, GWL_EXSTYLE) | WS_EX_LAYERED);
+            SetLayeredWindowAttributes(win, 0, 255, 2 /* LWA_ALPHA: fully opaque */);
+        }
+    }
 
     public static int Attach(string[] a)
     {
+        SetProcessDpiAwarenessContext(new IntPtr(-4));   // work in real pixels, whatever the display scaling
         var win = new IntPtr(long.Parse(a[1]));
-        int x = int.Parse(a[2]), y = int.Parse(a[3]), w = int.Parse(a[4]), h = int.Parse(a[5]);
         if (!IsWindow(win)) { Console.Error.WriteLine("The wallpaper window wasn't found."); return 2; }
 
         var progman = FindWindow("Progman", null);
         if (progman == IntPtr.Zero) { Console.Error.WriteLine("Couldn't find the desktop (Progman)."); return 3; }
-        // 0x052C: ask Explorer to create the wallpaper layer behind the icons
+        // ask Explorer for a wallpaper layer behind the icons (0xD, 1 is what Windows 11 needs; 0, 0 for older)
         SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(0x1), 0, 1000, out _);
         SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0, 1000, out _);
 
-        // classic layout (Windows 10, 11 before 24H2): a top-level WorkerW right after the one holding the icons
-        IntPtr worker = IntPtr.Zero;
-        EnumWindows((top, _) =>
-        {
-            if (FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero)
-                worker = FindWindowEx(IntPtr.Zero, top, "WorkerW", null);
-            return true;
-        }, IntPtr.Zero);
+        // the main screen, in real pixels
+        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        GetMonitorInfo(MonitorFromPoint(new POINT(), 1 /* primary */), ref mi);
+        var rc = mi.rcMonitor;
+        Console.WriteLine($"build {Environment.OSVersion.Version} monitor {rc.L},{rc.T} {rc.R - rc.L}x{rc.B - rc.T}");
 
-        int ox = x - GetSystemMetrics(SM_XVIRTUALSCREEN), oy = y - GetSystemMetrics(SM_YVIRTUALSCREEN);
-        if (worker != IntPtr.Zero)
+        var iconsInProgman = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
+        bool raised = (Style(progman, GWL_EXSTYLE) & WS_EX_NOREDIRECTIONBITMAP) != 0 || iconsInProgman != IntPtr.Zero;
+
+        IntPtr parent, after = IntPtr.Zero;
+        if (raised)
         {
+            if (iconsInProgman == IntPtr.Zero) { Console.Error.WriteLine("Couldn't find the desktop icon layer."); return 4; }
+            parent = progman; after = iconsInProgman;              // z-order: icons, us, wallpaper
+            MakeChild(win, layered: true);
+            SetParent(win, progman);
+        }
+        else
+        {
+            IntPtr worker = IntPtr.Zero;
+            EnumWindows((top, _) =>
+            {
+                if (FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero)
+                    worker = FindWindowEx(IntPtr.Zero, top, "WorkerW", null);
+                return true;
+            }, IntPtr.Zero);
+            if (worker == IntPtr.Zero) { Console.Error.WriteLine("Couldn't find the wallpaper layer (WorkerW)."); return 5; }
+            parent = worker;
+            MakeChild(win, layered: false);
             SetParent(win, worker);
-            SetWindowPos(win, IntPtr.Zero, ox, oy, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-            Console.WriteLine("ok workerw");
-            return 0;
         }
 
-        // Windows 11 24H2+: the icons (SHELLDLL_DefView) and the wallpaper layer (WorkerW) are children of Progman.
-        // Sit between them: under the icons, above the plain wallpaper.
-        var icons = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
-        if (icons == IntPtr.Zero) { Console.Error.WriteLine("Couldn't find the desktop icon layer."); return 4; }
-        SetParent(win, progman);
-        SetWindowPos(win, icons, ox, oy, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-        var layer = FindWindowEx(progman, IntPtr.Zero, "WorkerW", null);
-        if (layer != IntPtr.Zero) SetWindowPos(layer, win, 0, 0, 0, 0, 0x0001 | 0x0002 | SWP_NOACTIVATE);   // keep the old wallpaper below us
-        Console.WriteLine("ok progman");
+        // place it over the main screen, in the parent's coordinates
+        var tl = new POINT { X = rc.L, Y = rc.T };
+        ScreenToClient(parent, ref tl);
+        SetWindowPos(win, after, tl.X, tl.Y, rc.R - rc.L, rc.B - rc.T, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED | (after == IntPtr.Zero ? 0x4u /* NOZORDER */ : 0));
+        if (raised)
+        {
+            var wp = BiggestChildWorker(progman);
+            if (wp != IntPtr.Zero && wp != win) SetWindowPos(wp, win, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);   // plain wallpaper below us
+        }
+
+        // check it really landed
+        bool ok = GetParent(win) == parent && IsWindowVisible(win);
+        GetWindowRect(win, out var got);
+        Console.WriteLine($"{(raised ? "raised" : "classic")} desktop; parent ok={GetParent(win) == parent} visible={IsWindowVisible(win)} rect={got.L},{got.T} {got.R - got.L}x{got.B - got.T}");
+        if (!ok) { Console.Error.WriteLine("The window didn't attach to the desktop."); return 6; }
+        Console.WriteLine("ok");
         return 0;
     }
 
