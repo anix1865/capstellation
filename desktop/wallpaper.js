@@ -19,6 +19,11 @@ const ICON = {
 };
 
 let wallWin = null, tray = null, ctrlWin = null;
+const mirrors = new Map();     // other screens: display id → window showing the same thing (no controls)
+let ctx = null;                // { url, nativeDir } while wallpaper mode is on
+// screens the user switched off (ids); any other screen, including ones plugged in later, gets the wallpaper
+const offFile = () => path.join(app.getPath('userData'), 'wallpaper-screens.json');
+const readOff = () => { try{ return JSON.parse(fs.readFileSync(offFile(), 'utf8')).off || []; }catch{ return []; } };
 const CTRL = { closed: [94, 52], open: [272, 360] };   // control window size (px)
 const state = { active: false };
 
@@ -61,11 +66,11 @@ function tapRun(nativeDir, args){
  * picture (like the menu-bar snapshot) covers it. Put the wallpaper one layer above the picture
  * and still well below the desktop icons.
  */
-async function placeAboveDesktopPicture(nativeDir){
+async function placeAboveDesktopPicture(win, nativeDir){
   let picture = -2147483623;                         // CGWindowLevelForKey(.desktopWindow) on current macOS
   try{ const [p] = (await tapRun(nativeDir, ['--desktop-levels'])).split(' ').map(Number); if (Number.isFinite(p)) picture = p; }
   catch(e){ console.warn('wallpaper: desktop levels:', e.message || e); }
-  try{ wallWin.setAlwaysOnTop(true, 'normal', picture + 1); }       // 'normal' is level 0, so this lands at picture + 1
+  try{ win.setAlwaysOnTop(true, 'normal', picture + 1); }       // 'normal' is level 0, so this lands at picture + 1
   catch(e){ console.warn('wallpaper: level:', e.message || e); }
 }
 async function rememberMacPicture(nativeDir){
@@ -116,11 +121,11 @@ function makeTray(onStop){
 }
 
 /** Tell the page how much of the screen the menu bar, Dock or taskbar covers, so nothing hides under them. */
-function sendInsets(){
-  if (!wallWin || wallWin.isDestroyed()) return;
-  const d = screen.getPrimaryDisplay(), b = d.bounds, w = d.workArea;
+function sendInsets(win = wallWin, d = screen.getPrimaryDisplay()){
+  if (!win || win.isDestroyed()) return;
+  const b = d.bounds, w = d.workArea;
   const t = w.y - b.y, l = w.x - b.x, r = b.x + b.width - (w.x + w.width), bt = b.y + b.height - (w.y + w.height);
-  wallWin.webContents.executeJavaScript(`typeof setWallInsets === 'function' && setWallInsets(${t},${r},${bt},${l})`).catch(() => {});
+  win.webContents.executeJavaScript(`typeof setWallInsets === 'function' && setWallInsets(${t},${r},${bt},${l})`).catch(() => {});
 }
 
 /** The small shuffle / settings control in the top-left corner (the wallpaper itself can't be clicked). */
@@ -139,19 +144,18 @@ function makeControls(url){
   ctrlWin.loadURL(url + 'controls.html');
   ctrlWin.once('ready-to-show', () => ctrlWin && ctrlWin.showInactive());
 }
-function controls(open){
+function controls(open, h){
   if (!ctrlWin || ctrlWin.isDestroyed()) return { ok: false };
-  const [width, height] = open ? CTRL.open : CTRL.closed, b = ctrlWin.getBounds();
+  const [width, height] = open ? [CTRL.open[0], h > 0 ? Math.min(h, 900) : CTRL.open[1]] : CTRL.closed, b = ctrlWin.getBounds();
   ctrlWin.setBounds({ x: b.x, y: b.y, width, height });
   return { ok: true };
 }
 
-/** Start wallpaper mode. Resolves once it's showing; rejects with a readable error. */
-async function start({ url, nativeDir, onStop }){
-  if (state.active) return;
-  const b = screen.getPrimaryDisplay().bounds;
+/** A click-through wallpaper window covering one screen, behind the desktop icons. */
+async function openOn(display, query){
+  const b = display.bounds, { url, nativeDir } = ctx;
   const mac = process.platform === 'darwin';
-  wallWin = new BrowserWindow({
+  const win = new BrowserWindow({
     x: b.x, y: b.y, width: b.width, height: b.height,
     type: mac ? 'desktop' : undefined,
     frame: false, show: false, skipTaskbar: true, focusable: false, hasShadow: false,
@@ -161,25 +165,60 @@ async function start({ url, nativeDir, onStop }){
     // keep drawing even when macOS thinks the desktop is covered
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
-  wallWin.setIgnoreMouseEvents(true);
-  if (mac) wallWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
-  wallWin.on('closed', () => { wallWin = null; });
-  wallWin.webContents.on('did-finish-load', sendInsets);
-  await wallWin.loadURL(url + '?wallpaper=1');
+  win.setIgnoreMouseEvents(true);
+  if (mac) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  win.webContents.on('did-finish-load', () => sendInsets(win, display));
+  await win.loadURL(url + query);
 
   if (process.platform === 'win32'){
-    wallWin.showInactive();
-    const hwnd = wallWin.getNativeWindowHandle();
+    win.showInactive();
+    const hwnd = win.getNativeWindowHandle();
     const handle = (hwnd.length >= 8 ? hwnd.readBigUInt64LE(0) : BigInt(hwnd.readUInt32LE(0))).toString();
     try{
       await runHelper(nativeDir, ['--wallpaper', handle, String(b.x), String(b.y), String(b.width), String(b.height)]);
-    }catch(e){
-      wallWin.destroy(); wallWin = null;
-      throw e;
-    }
+    }catch(e){ win.destroy(); throw e; }
   } else {
-    await placeAboveDesktopPicture(nativeDir);
-    wallWin.showInactive();
+    await placeAboveDesktopPicture(win, nativeDir);
+    win.showInactive();
+  }
+  return win;
+}
+
+/** Mirrors on the other screens: open the missing ones, close ones that were unplugged or switched off. */
+let syncing = Promise.resolve();
+function syncMirrors(){
+  syncing = syncing.then(async () => {
+    if (!state.active) return;
+    const off = readOff(), primary = screen.getPrimaryDisplay().id;
+    const want = screen.getAllDisplays().filter(d => d.id !== primary && !off.includes(d.id));
+    for (const [id, w] of mirrors) if (!want.some(d => d.id === id)){ if (!w.isDestroyed()) w.destroy(); mirrors.delete(id); }
+    for (const d of want) if (!mirrors.has(d.id)){
+      try{ const w = await openOn(d, '?wallpaper=1&mirror=1'); if (state.active) mirrors.set(d.id, w); else w.destroy(); }
+      catch(e){ log('mirror on screen', d.id, 'failed:', e.message || e); }
+    }
+  });
+  return syncing;
+}
+/** The corner control's Screens list (GET), or switch screens on / off (POST { off: [ids] }). */
+function screens(body){
+  if (body && Array.isArray(body.off)){
+    try{ fs.writeFileSync(offFile(), JSON.stringify({ off: body.off.map(Number) })); }catch{}
+    syncMirrors();
+  }
+  const off = readOff(), primary = screen.getPrimaryDisplay().id;
+  return { ok: true, screens: screen.getAllDisplays().map((d, i) => ({
+    id: d.id, primary: d.id === primary, on: d.id === primary || !off.includes(d.id),
+    label: (d.label || `Screen ${i + 1}`) + ` · ${d.size.width}×${d.size.height}`,
+  })) };
+}
+
+/** Start wallpaper mode. Resolves once it's showing on the main screen; rejects with a readable error. */
+async function start({ url, nativeDir, onStop }){
+  if (state.active) return;
+  ctx = { url, nativeDir };
+  wallWin = await openOn(screen.getPrimaryDisplay(), '?wallpaper=1');
+  wallWin.on('closed', () => { wallWin = null; });
+  if (process.platform === 'darwin'){
     macCtx = { nativeDir };
     try{ await rememberMacPicture(nativeDir); }catch(e){ console.warn('wallpaper:', e.message || e); }
     setTimeout(tint, 2500);              // once the page has drawn its background
@@ -188,8 +227,11 @@ async function start({ url, nativeDir, onStop }){
   sendInsets();
   makeControls(url);
   makeTray(onStop);
-  // follow display changes (resolution, docking a laptop)
+  syncMirrors();
+  // follow display changes (resolution, docking a laptop, plugging screens in or out)
   screen.on('display-metrics-changed', refit);
+  screen.on('display-added', syncMirrors);
+  screen.on('display-removed', syncMirrors);
 }
 
 function refit(){
@@ -197,6 +239,10 @@ function refit(){
   const b = screen.getPrimaryDisplay().bounds;
   if (process.platform === 'darwin') wallWin.setBounds(b);
   sendInsets();
+  for (const [id, w] of mirrors){
+    const d = screen.getAllDisplays().find(x => x.id === id);
+    if (d && !w.isDestroyed()){ if (process.platform === 'darwin') w.setBounds(d.bounds); sendInsets(w, d); }
+  }
   if (ctrlWin){ const w = screen.getPrimaryDisplay().workArea, c = ctrlWin.getBounds(); ctrlWin.setBounds({ ...c, x: w.x, y: w.y }); }
 }
 
@@ -205,6 +251,10 @@ async function stop({ nativeDir } = {}){
   if (!state.active && !wallWin) return;
   state.active = false;
   screen.removeListener('display-metrics-changed', refit);
+  screen.removeListener('display-added', syncMirrors);
+  screen.removeListener('display-removed', syncMirrors);
+  for (const w of mirrors.values()) if (!w.isDestroyed()) w.destroy();
+  mirrors.clear();
   if (wallWin){ wallWin.destroy(); wallWin = null; }
   if (ctrlWin){ ctrlWin.destroy(); ctrlWin = null; }
   if (process.platform === 'darwin' && macCtx){ const d = macCtx.nativeDir; macCtx = null; await restoreMacPicture(d); }
@@ -214,4 +264,4 @@ async function stop({ nativeDir } = {}){
   }
 }
 
-module.exports = { start, stop, state, tint, controls };
+module.exports = { start, stop, state, tint, controls, screens };

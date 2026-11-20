@@ -53,7 +53,7 @@ Play something in **Spotify** or **Apple Music** (on Windows, any player that sh
 
 **Open at login** (panel, desktop app only): Capstellation starts when you log in to your computer. It's on by default; untick it to turn it off.
 
-**Use as wallpaper** (panel, desktop app only): Capstellation plays behind your desktop icons on your main screen instead of in a window. It's click-through, so the desktop works as normal, and the clock and song name stay clear of the menu bar. A small control in the top-left corner shuffles the collage, and its arrow opens the other settings. If you quit or log out while it's the wallpaper, it comes back as the wallpaper next time. To turn it off, use **Stop wallpaper** there, use the star icon in the menu bar (Mac) or the system tray (Windows), or click Capstellation in the Dock.
+**Use as wallpaper** (panel, desktop app only): Capstellation plays behind your desktop icons on your main screen instead of in a window. It's click-through, so the desktop works as normal, and the clock and song name stay clear of the menu bar. A small control in the top-left corner shuffles the collage, and its arrow opens the other settings. With more than one screen, the wallpaper shows on all of them (the main screen has the control; the others follow along), and the **Screens** list in that menu turns screens on or off. If you quit or log out while it's the wallpaper, it comes back as the wallpaper next time. To turn it off, use **Stop wallpaper** there, use the star icon in the menu bar (Mac) or the system tray (Windows), or click Capstellation in the Dock.
 
 The clock, lyrics, stars, visualizer and light bar all take their colors from the background, always at a brightness that keeps them readable.
 

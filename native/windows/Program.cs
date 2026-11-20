@@ -311,7 +311,7 @@ static class Wallpaper
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
     [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint key, byte alpha, uint flags);
-    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT p, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr mon, ref MONITORINFO mi);
     [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint action, uint param, StringBuilder? sb, uint flags);
@@ -359,9 +359,9 @@ static class Wallpaper
         SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(0x1), 0, 1000, out _);
         SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0, 1000, out _);
 
-        // the main screen, in real pixels
+        // the screen the app opened this window on, in real pixels (each screen gets its own window)
         var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        GetMonitorInfo(MonitorFromPoint(new POINT(), 1 /* primary */), ref mi);
+        GetMonitorInfo(MonitorFromWindow(win, 2 /* nearest */), ref mi);
         var rc = mi.rcMonitor;
         Console.WriteLine($"build {Environment.OSVersion.Version} monitor {rc.L},{rc.T} {rc.R - rc.L}x{rc.B - rc.T}");
 

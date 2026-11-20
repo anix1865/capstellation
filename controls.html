@@ -28,6 +28,8 @@ body.open #menu{display:block}
 .seg button.on{background:var(--accent,#e07a45);border-color:transparent;color:#140c08;font-weight:700}
 label{display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;flex:1 0 45%}
 input[type=checkbox]{accent-color:var(--accent,#e07a45);width:15px;height:15px;margin:0}
+#screens label{flex:none;overflow:hidden;text-overflow:ellipsis}
+#screens input:disabled + span{opacity:.7}
 #stop{width:100%;padding:7px;border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05);margin-top:2px}
 #stop:hover{background:rgba(255,255,255,.12)}
 hr{border:0;border-top:1px solid rgba(255,255,255,.1);margin:4px 0 10px}
@@ -61,6 +63,10 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.1);margin:4px 0 10px}
     <button data-vis="bars">Bars</button>
     <button data-vis="radial">Radial</button>
   </div>
+  <div class="row" id="screensRow" style="display:none">
+    <span class="lbl">Screens</span>
+    <div id="screens" style="flex:1 0 100%;display:grid;gap:6px"></div>
+  </div>
   <hr>
   <button id="stop">Stop wallpaper</button>
 </div>
@@ -89,6 +95,23 @@ $$('[data-vis]').forEach(b => b.onclick = () => { set('visStyle', b.dataset.vis)
 $('#shuffle').onclick = () => set('wpShuffle', String(Date.now()));
 $('#stop').onclick = () => fetch('wallpaper', { method:'POST', body: JSON.stringify({ on:false }) });
 
+// Screens: the main one always shows the wallpaper (it has these controls); tick the others on or off
+const post = (p, body) => fetch(p, { method:'POST', body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
+async function loadScreens(){
+  let j; try{ j = await post('wallpaper/screens'); }catch{ return; }
+  if (!j.ok || j.screens.length < 2){ $('#screensRow').style.display = 'none'; return; }
+  $('#screensRow').style.display = '';
+  $('#screens').replaceChildren(...j.screens.map(d => {
+    const l = document.createElement('label'), c = document.createElement('input'), t = document.createElement('span');
+    c.type = 'checkbox'; c.checked = d.on; c.disabled = d.primary; c.dataset.id = d.id;
+    t.textContent = (d.primary ? 'Main · ' : '') + d.label;
+    c.onchange = () => post('wallpaper/screens', { off: [...$$('#screens input')].filter(x => !x.checked).map(x => Number(x.dataset.id)) });
+    l.append(c, t); return l;
+  }));
+}
+/** Fit the window to the open menu. */
+const fit = () => fetch(`wallpaper/controls?open=1&h=${Math.ceil($('#menu').getBoundingClientRect().bottom) + 8}`, { method:'POST' }).catch(() => {});
+
 // the arrow opens the settings; clicking it again, or anywhere outside, closes them
 let open = false;
 async function setOpen(v){
@@ -99,6 +122,8 @@ async function setOpen(v){
     render();
     await fetch('wallpaper/controls?open=1', { method:'POST' }).catch(() => {});   // grow the window first
     document.body.classList.add('open');
+    await loadScreens();
+    if (open) fit();
   } else {
     document.body.classList.remove('open');
     fetch('wallpaper/controls?open=0', { method:'POST' }).catch(() => {});

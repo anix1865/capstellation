@@ -340,7 +340,11 @@ function createServer({ root, tap, hooks = {} }){
           let a = {}; try{ a = JSON.parse(body.toString() || '{}'); }catch{}
           return json(res, hooks.startup ? hooks.startup(!!a.on) : { ok: false });
         }
-        if (url.pathname === '/wallpaper/controls') return json(res, hooks.controls ? hooks.controls(q.open === '1') : { ok: false });
+        if (url.pathname === '/wallpaper/controls') return json(res, hooks.controls ? hooks.controls(q.open === '1', Number(q.h)) : { ok: false });
+        if (url.pathname === '/wallpaper/screens'){
+          let a = null; try{ a = JSON.parse(body.toString() || 'null'); }catch{}
+          return json(res, hooks.screens ? hooks.screens(a) : { ok: false });
+        }
         if (url.pathname === '/wallpaper/tint') return json(res, hooks.tint ? hooks.tint() : { ok: false });
         if (url.pathname === '/wallpaper'){
           if (!hooks.wallpaper) return json(res, { ok: false, error: 'only available in the Capstellation app' });

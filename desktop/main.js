@@ -53,7 +53,8 @@ const hooks = {
     catch(e){ return { ok: false, error: String(e.message || e) }; }
   },
   tint: () => { wallpaper.tint(); return { ok: true }; },
-  controls: open => wallpaper.controls(open),
+  controls: (open, h) => wallpaper.controls(open, h),
+  screens: body => wallpaper.screens(body),
   startup: on => {
     if (typeof on === 'boolean') writeSettings({ openAtLogin: on });
     return { ok: true, on: applyOpenAtLogin(), packaged: app.isPackaged };
