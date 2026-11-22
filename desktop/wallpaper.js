@@ -125,7 +125,8 @@ function sendInsets(win = wallWin, d = screen.getPrimaryDisplay()){
   if (!win || win.isDestroyed()) return;
   const b = d.bounds, w = d.workArea;
   const t = w.y - b.y, l = w.x - b.x, r = b.x + b.width - (w.x + w.width), bt = b.y + b.height - (w.y + w.height);
-  win.webContents.executeJavaScript(`typeof setWallInsets === 'function' && setWallInsets(${t},${r},${bt},${l})`).catch(() => {});
+  const lift = process.platform === 'win32' ? bt : 0;          // Windows: keep the bar visualizer above the taskbar
+  win.webContents.executeJavaScript(`typeof setWallInsets === 'function' && setWallInsets(${t},${r},${bt},${l},${lift})`).catch(() => {});
 }
 
 /** The small shuffle / settings control in the top-left corner (the wallpaper itself can't be clicked). */

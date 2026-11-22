@@ -398,7 +398,8 @@ static class Wallpaper
         if (raised)
         {
             var wp = BiggestChildWorker(progman);
-            if (wp != IntPtr.Zero && wp != win) SetWindowPos(wp, win, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);   // plain wallpaper below us
+            // plain wallpaper at the very bottom: below every screen's window, not just this one (or it covers the others)
+            if (wp != IntPtr.Zero && wp != win) SetWindowPos(wp, new IntPtr(1) /* HWND_BOTTOM */, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
 
         // check it really landed

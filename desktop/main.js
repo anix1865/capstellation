@@ -79,11 +79,11 @@ async function createWindow(){
     setInterval(() => { if (!wallpaper.state.active && !win.isDestroyed()) checkForUpdates(win).catch(() => {}); }, 6 * 3600 * 1000);
   });
 
-  // Links (AudD, Spotify dashboard…) open in the normal browser; Spotify login stays in-app.
+  // Links open in the normal browser.
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => {
     const u = new URL(url);
-    const ok = u.origin === new URL(server.url).origin || u.hostname === 'accounts.spotify.com';
+    const ok = u.origin === new URL(server.url).origin;
     if (!ok){ e.preventDefault(); shell.openExternal(url); }
   });
   win.loadURL(server.url);

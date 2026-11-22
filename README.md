@@ -34,10 +34,6 @@ Not sure which Mac you have? Apple menu → **About This Mac** → **Chip**.
 
 Play something in **Spotify** or **Apple Music** (on Windows, any player that shows up in the system media controls, including browsers). The lyrics, cover and visualizer follow along on their own.
 
-**Sources** (panel, bottom left):
-- **Mac / Windows (default):** reads the song, exact position, pauses and skips from the player on this computer. No accounts or keys.
-- **Spotify:** uses the Spotify Web API, for example to follow Spotify playing on another device. Create an app at developer.spotify.com, add the Redirect URI shown in the panel, and paste its Client ID.
-
 **Background** (panel):
 - **Album art / My image:** a collage of the album cover, or one image of your own (pick it, or drag it onto the screen).
 - **Collage:** an asymmetrical arrangement of the cover, laid out differently for each song. **Shuffle layout** makes a new arrangement.
